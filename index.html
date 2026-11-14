@@ -146,6 +146,15 @@ function collect(ms,onFrame){
     S.listeners.add(fn);
   });
 }
+// 音声まわりを作り直す（iOSで音が出なくなった時用）
+async function resetAudio(){
+  if(S.stream)S.stream.getTracks().forEach(t=>t.stop());
+  S.stream=null;S.analyser=null;
+  try{if(S.ctx)await S.ctx.close()}catch(e){}
+  S.ctx=null;for(const k in waveCache)delete waveCache[k];
+  await sleep(100);
+  await startMic(DB.settings.deviceId);
+}
 async function sleepUntil(t){while(S.ctx.currentTime<t)await sleep(15)}
 
 /* ========== 基準音 ========== */
@@ -254,6 +263,10 @@ VIEWS.home=()=>{
     <button class="primary" data-go="results">診断結果とアドバイス</button>
   </div>
   <div class="card">
+    ${item('onset','🎯 出だし練習（しゃくり対策）',R.onset?`まっすぐ ${R.onset.straight}/${R.onset.n}`:'未実施')}
+    ${item('phrase','🎼 フレーズ練習（音の移動）',R.phrase?`まっすぐ ${R.phrase.straight}/${R.phrase.n}音`:'未実施')}
+  </div>
+  <div class="card">
     ${item('free','🎵 フリー歌唱（チューナー）',R.free?`前回 ${R.free.notes}音`:'音楽を聞きながら歌う')}
     ${item('settings','⚙ 設定',`音域 ${nn(st.low)}〜${nn(st.high)}`)}
   </div>`;
@@ -266,9 +279,11 @@ VIEWS.mic=()=>withMic(async()=>{
     <div class="sub">使用中の入力</div><div><b id="lbl">${esc(S.trackLabel||'(名称不明)')}</b></div><div id="warn">${btWarn(S.trackLabel)}</div>
     <label>入力デバイス</label><select id="dev"><option value="">（既定）</option></select>
     <label>入力レベル</label><div class="meter"><div id="lvl"></div></div>
-    <div class="big" id="note">--</div><div class="sub center" id="cn">「あー」と声を出すと音名が表示されます</div>
+    <div class="big" id="note">--</div><div class="center" id="hz" style="font-size:20px">--- Hz</div><div class="sub center" id="cn">「あー」と声を出すと音名が表示されます</div>
+    <label>波形（マイク入力）</label><canvas id="wave" style="height:110px"></canvas>
     <button id="beep">テスト音を鳴らす（${nn(57)}）</button>
-    <p class="sub">サンプリング周波数 ${S.ctx.sampleRate}Hz${S.ctx.outputLatency?` ／ 出力遅延(参考) ${Math.round(S.ctx.outputLatency*1000)}ms`:''}</p></div>
+    <button id="reset">音声をリセット（音が出ない時）</button>
+    <p class="sub" id="diag"></p></div>
   <div class="card sub">
     <b>うまくいかないとき</b>
     <ul>
@@ -291,13 +306,32 @@ VIEWS.mic=()=>withMic(async()=>{
     $('#lbl').textContent=S.trackLabel||'(名称不明)';$('#warn').innerHTML=btWarn(S.trackLabel);
     go('mic');
   };
-  $('#beep').onclick=async()=>{await ensureAudio();playTone(m2f(57),1.0)};
-  const recent=[];
+  const diag=()=>{const c=S.ctx;$('#diag').textContent=`状態: ${c.state} ／ ${c.sampleRate}Hz${c.outputLatency?` ／ 出力遅延(参考) ${Math.round(c.outputLatency*1000)}ms`:''} ／ audioSession: ${navigator.audioSession?navigator.audioSession.type:'非対応'}`};
+  diag();
+  $('#beep').onclick=async()=>{await ensureAudio();playTone(m2f(57),1.0);diag()};
+  $('#reset').onclick=async()=>{
+    $('#reset').disabled=true;$('#reset').textContent='リセット中…';
+    try{await resetAudio()}catch(e){$('#diag').textContent='リセット失敗: '+e.name;return}
+    if(tok!==viewId)return;
+    go('mic');
+  };
+  const wc=$('#wave'),dpr=window.devicePixelRatio||1,ww=wc.clientWidth,wh=wc.clientHeight;
+  wc.width=ww*dpr;wc.height=wh*dpr;const wg=wc.getContext('2d');wg.scale(dpr,dpr);
+  const recent=[];let fcount=0;
   S.listeners.add(p=>{
     const db=20*Math.log10(p.rms+1e-9);
     $('#lvl').style.width=clamp((db+60)/60*100,0,100)+'%';
     if(p.f){recent.push(f2m(p.f));if(recent.length>4)recent.shift()}else recent.length=0;
-    if(recent.length>=2){const m=median(recent),c=(m-Math.round(m))*100;$('#note').textContent=nn(m)+' '+nnj(m);$('#cn').textContent=`${Math.round(p.f)}Hz ／ ${fmtC(c)}`}
+    if(recent.length>=2){const m=median(recent),c=(m-Math.round(m))*100;$('#note').textContent=nn(m)+' '+nnj(m);$('#hz').textContent=p.f.toFixed(1)+' Hz';$('#cn').innerHTML=`<span class="${cls(c)}">${nn(m)}から ${fmtC(c)}</span>`}
+    else $('#hz').textContent='--- Hz';
+    // 波形（約20ms分）
+    if(++fcount%2)return;
+    const b=S.buf,n=Math.min(b.length,Math.round(S.ctx.sampleRate*0.02));
+    let mx=0.02;for(let i=0;i<n;i++)mx=Math.max(mx,Math.abs(b[i]));
+    wg.clearRect(0,0,ww,wh);wg.strokeStyle='#2c333b';wg.beginPath();wg.moveTo(0,wh/2);wg.lineTo(ww,wh/2);wg.stroke();
+    wg.strokeStyle=p.f?'#4fc3f7':'#5f6b77';wg.lineWidth=1.5;wg.beginPath();
+    for(let i=0;i<n;i++){const x=i/n*ww,y=wh/2-b[i]/mx*(wh/2-4);i?wg.lineTo(x,y):wg.moveTo(x,y)}
+    wg.stroke();
   });
 });
 
@@ -348,16 +382,20 @@ VIEWS.calib=()=>{
 /* ========== ① 聴き分け ========== */
 VIEWS.disc=()=>{
   const tok=viewId,alive=()=>tok===viewId;
-  let d=150,streak=0,lastDir=null,rev=[],n=0,pair=null,busy=false,done=false;
+  let d=150,streak=0,lastDir=null,rev=[],n=0,pair=null,busy=false,done=false,practice=false;
   app.innerHTML=hdr('① 聴き分けテスト')+`
   <p class="sub">2つの音が順番に鳴ります。<b>高かった方</b>を選んでください。正解が続くと差が小さくなり、間違えると大きくなります（3〜5分）。わからないときは勘で答えてOKです。マイクは使いません。</p>
-  <div class="card"><div id="prog" class="sub">0問</div><div id="cue" class="cue">—</div>
+  <div class="card"><label style="margin-top:0"><input type="checkbox" id="prac"> 練習モード（聞き直しOK・結果は記録しない）</label>
+  <p class="sub">診断モードでは、各問題の音は1回しか聞けません。</p>
+  <div id="prog" class="sub">0問</div><div id="cue" class="cue">—</div>
   <button class="primary" id="play">▶ 音を聞く</button>
   <div class="row"><button id="a1" disabled>1つ目が高い</button><button id="a2" disabled>2つ目が高い</button></div>
   <p id="fb" class="center"></p></div>`;
   const cue=$('#cue'),a1=$('#a1'),a2=$('#a2'),fb=$('#fb'),playB=$('#play');
   async function play(){
-    if(busy||done)return;busy=true;await ensureAudio();
+    if(busy||done)return;
+    if(pair&&!practice)return;
+    busy=true;$('#prac').disabled=true;await ensureAudio();
     if(!pair){
       const base=m2f(48+Math.random()*12),hi=Math.random()<0.5?1:2;
       const lo=base*Math.pow(2,-d/2400),up=base*Math.pow(2,d/2400);
@@ -368,7 +406,8 @@ VIEWS.disc=()=>{
     playTone(pair.f1,0.5,t);playTone(pair.f2,0.5,t+0.8);
     cue.textContent='1つ目…';await sleepUntil(t+0.75);if(!alive())return;
     cue.textContent='2つ目…';await sleepUntil(t+1.35);if(!alive())return;
-    cue.textContent='どっちが高い？';a1.disabled=a2.disabled=false;busy=false;playB.textContent='↻ もう一度聞く';
+    cue.textContent='どっちが高い？';a1.disabled=a2.disabled=false;busy=false;
+    if(practice)playB.textContent='↻ もう一度聞く';else playB.disabled=true;
   }
   function answer(k){
     if(!pair||busy)return;
@@ -377,7 +416,7 @@ VIEWS.disc=()=>{
     let dir=null;
     if(ok){streak++;if(streak>=2){streak=0;dir='down'}}else{streak=0;dir='up'}
     if(dir){if(lastDir&&dir!==lastDir)rev.push(d);lastDir=dir;d=dir==='down'?Math.max(2,d/1.4):Math.min(800,d*1.4)}
-    pair=null;a1.disabled=a2.disabled=true;playB.textContent='▶ 音を聞く';
+    pair=null;a1.disabled=a2.disabled=true;playB.textContent='▶ 音を聞く';playB.disabled=false;
     $('#prog').textContent=`${n}問`;
     if(rev.length>=8||n>=50){finish();return}
     setTimeout(()=>{if(alive())play()},700);
@@ -385,17 +424,26 @@ VIEWS.disc=()=>{
   function finish(){
     done=true;
     const r=rev.slice(-6),thr=Math.round(r.length>=2?Math.exp(mean(r.map(Math.log))):d);
-    DB.results.disc={thr,n,date:Date.now()};pushHist('disc',{thr});save();
+    if(!practice){DB.results.disc={thr,n,date:Date.now()};pushHist('disc',{thr});save()}
     cue.textContent='完了';
-    fb.innerHTML=`聴き分けられる差: <b>約${thr}セント</b><br><span class="sub">（100セント＝半音。一般的には10〜30セント前後で判別できる人が多いです）</span>`;
-    playB.textContent='ホームへ';playB.onclick=()=>go('home');
+    fb.innerHTML=`聴き分けられる差: <b>約${thr}セント</b>${practice?'（練習モードのため記録なし）':''}<br><span class="sub">（100セント＝半音。一般的には10〜30セント前後で判別できる人が多いです）</span>`;
+    playB.textContent='ホームへ';playB.disabled=false;playB.onclick=()=>go('home');
   }
+  $('#prac').onchange=e=>{practice=e.target.checked};
   playB.onclick=play;a1.onclick=()=>answer(1);a2.onclick=()=>answer(2);
 };
 
+/* ========== オクターブ誤検出の補正 ========== */
+// 声の出始めなどで1オクターブずれて検出されたフレームを、全体の中央値と同じオクターブに寄せる
+function foldOct(v){
+  if(!v.length)return v;
+  const ref=median(v.map(a=>a.f));
+  return v.map(a=>({...a,f:a.f*Math.pow(2,-Math.round(cents(a.f,ref)/1200))}));
+}
+
 /* ========== ② ロングトーン ========== */
 function analyzeLong(arr){
-  const v=arr.filter(a=>a.f);if(v.length<20)return null;
+  const v=foldOct(arr.filter(a=>a.f));if(v.length<20)return null;
   const tOn=v[0].t,s=v.filter(a=>a.t>=tOn+0.7);if(s.length<15)return null;
   const fm=median(s.map(a=>a.f)),c=s.map(a=>cents(a.f,fm));
   const keep=c.map((x,i)=>[x,s[i].t]).filter(([x])=>Math.abs(x)<300);
@@ -436,7 +484,7 @@ VIEWS.longtone=()=>withMic(()=>{
 
 /* ========== ③④ 聞いて歌う ========== */
 function analyzeMatch(arr,target){
-  const v=arr.filter(a=>a.f);if(v.length<10)return null;
+  const v=foldOct(arr.filter(a=>a.f));if(v.length<10)return null;
   const tOn=v[0].t;
   const onset=v.filter(a=>a.t<tOn+0.15).map(a=>a.f);
   const stable=v.filter(a=>a.t>=tOn+0.4).map(a=>a.f);
@@ -448,7 +496,7 @@ function analyzeMatch(arr,target){
 }
 function summarizeMatch(T,st){
   const errs=T.map(t=>t.err),center=(st.low+st.high)/2;
-  return {n:T.length,mae:mean(errs.map(Math.abs)),bias:mean(errs),scoop:mean(T.map(t=>t.onErr-t.err)),
+  return {n:T.length,mae:mean(errs.map(Math.abs)),bias:mean(errs),scoop:median(T.map(t=>t.onErr-t.err)),
     octs:T.filter(t=>t.oct).length,slope:T.length>=5?linreg(T.map(t=>t.m-center),errs):0,
     trials:T.map(t=>({m:t.m,err:Math.round(t.err),on:Math.round(t.onErr)}))};
 }
@@ -497,6 +545,230 @@ function matchView(visual){
 }
 VIEWS.match=()=>matchView(false);
 VIEWS.matchVis=()=>matchView(true);
+
+/* ========== 出だし練習 ========== */
+function analyzeOnset(arr,target){
+  const v=foldOct(arr.filter(a=>a.f));if(v.length<5)return null;
+  // 声の出始め＝有声フレームが2つ以上続いた最初の位置
+  let i0=-1;
+  for(let i=0;i+1<v.length;i++){if(v[i+1].t-v[i].t<0.08){i0=i;break}}
+  if(i0<0)return null;
+  const tOn=v[i0].t,seg=v.slice(i0).filter(a=>a.t<=tOn+1.2);
+  const fin=seg.filter(a=>a.t>=tOn+0.15).map(a=>a.f);
+  if(fin.length<3)return null;
+  const fF=median(fin),oct=Math.round(cents(fF,target)/1200),tgt=target*Math.pow(2,oct);
+  const c=seg.map(a=>({t:a.t-tOn,c:cents(a.f,tgt)}));
+  const on=median(c.filter(x=>x.t<=0.08).map(x=>x.c));
+  let settle=null;
+  for(let i=0;i+2<c.length;i++){if([0,1,2].every(k=>Math.abs(c[i+k].c)<=30)){settle=Math.round(c[i].t*1000);break}}
+  return {on,fin:cents(fF,tgt),settle,oct,trace:c};
+}
+function drawOnset(canvas,trace){
+  const dpr=window.devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
+  canvas.width=w*dpr;canvas.height=h*dpr;const g=canvas.getContext('2d');g.scale(dpr,dpr);
+  const R=300,T=1.0,x=t=>(t+0.05)/(T+0.05)*w,y=c=>h/2-clamp(c,-R,R)/R*(h/2-6);
+  g.fillStyle='rgba(102,187,106,.16)';g.fillRect(0,y(30),w,y(-30)-y(30));
+  g.font='11px sans-serif';
+  for(const [c,l] of [[0,'目標'],[100,'+半音'],[-100,'-半音'],[200,'+全音'],[-200,'-全音']]){
+    g.strokeStyle=c?'#2c333b':'#66bb6a';g.lineWidth=c?1:2;g.beginPath();g.moveTo(0,y(c));g.lineTo(w,y(c));g.stroke();
+    g.fillStyle=c?'#7b8590':'#66bb6a';g.fillText(l,4,y(c)-3);
+  }
+  for(const t of [0,0.25,0.5,0.75]){g.strokeStyle='#2c333b';g.beginPath();g.moveTo(x(t),0);g.lineTo(x(t),h);g.stroke();g.fillStyle='#7b8590';g.fillText(t+'秒',x(t)+3,h-4)}
+  g.strokeStyle='#4fc3f7';g.lineWidth=2.5;g.lineJoin='round';g.beginPath();
+  trace.filter(p=>p.t<=T).forEach((p,i)=>{i?g.lineTo(x(p.t),y(p.c)):g.moveTo(x(p.t),y(p.c))});
+  g.stroke();
+}
+VIEWS.onset=()=>withMic(()=>{
+  const tok=viewId,alive=()=>tok===viewId,st=DB.settings,N=10,trials=[],targets=[];
+  let last=null;
+  for(let i=0;i<N;i++){let m;do{m=st.low+Math.floor(Math.random()*(st.high-st.low+1))}while(m===last&&st.high>st.low);targets.push(m);last=m}
+  app.innerHTML=hdr('🎯 出だし練習')+`
+  <p class="sub">基準音を聞いた後、「頭の中で鳴らして…」の表示中に音をイメージし、「ア！」が出たら<b>短く（0.5秒くらい）「ア」か「マ」</b>と出します。すくい上げずに、最初から目標の高さに入るのが目標です。全${N}音。</p>
+  <div class="card"><div id="prog" class="sub">0 / ${N}</div><div id="cue" class="cue">準備OK</div>
+  <canvas id="cv" style="height:200px"></canvas><div id="res"></div>
+  <button class="primary" id="go">1音目を開始</button></div>
+  <div class="card"><table id="tbl"></table></div>`;
+  const cue=$('#cue'),res=$('#res'),btn=$('#go');
+  drawOnset($('#cv'),[]);
+  let i=0;
+  btn.onclick=async()=>{
+    btn.disabled=true;await ensureAudio();if(!alive())return;
+    const m=targets[i],f=m2f(m),lat=Math.max(0,st.latencyMs??200)/1000;
+    res.innerHTML='';cue.textContent='♪ 聞いて…';
+    const t0=playTone(f,0.8);
+    await sleepUntil(t0+0.8+lat+0.1);if(!alive())return;
+    cue.textContent='💭 頭の中で鳴らして…';
+    await sleep(1000);if(!alive())return;
+    cue.textContent='🎤 ア！';
+    const arr=await collect(1800);
+    if(!alive())return;
+    cue.textContent='—';
+    const r=analyzeOnset(arr,f);
+    if(!r){res.innerHTML='<p class="warn">声をうまく拾えませんでした。もう一度どうぞ。</p>';btn.textContent='やり直す';btn.disabled=false;return}
+    r.m=m;trials.push(r);i++;
+    drawOnset($('#cv'),r.trace);
+    const ok=Math.abs(r.on)<=30;
+    const kind=ok?'<span class="ok">まっすぐ入れました</span>':r.on<0?'<span class="warn">下から入りました（しゃくり）</span>':'<span class="warn">上から入りました</span>';
+    res.innerHTML=`<p>${nn(m)}（${nnj(m)}）: ${kind}</p><p class="sub">出だし ${fmtC(r.on)} → 着地 ${fmtC(r.fin)} ／ 目標に入るまで ${r.settle==null?'未到達':r.settle+'ms'}</p>`;
+    $('#tbl').insertAdjacentHTML('beforeend',`<tr><td>${i}</td><td>${nn(m)}</td><td class="${ok?'ok':'warn'}">出だし ${fmtC(r.on)}</td><td class="sub">${r.settle==null?'未到達':r.settle+'ms'}</td></tr>`);
+    $('#prog').textContent=`${i} / ${N}`;
+    if(i>=N){
+      const st2=trials.map(t=>t.settle).filter(x=>x!=null);
+      const s={n:N,straight:trials.filter(t=>Math.abs(t.on)<=30).length,onMed:median(trials.map(t=>t.on)),
+        settleMed:st2.length?Math.round(median(st2)):null,
+        trials:trials.map(t=>({m:t.m,on:Math.round(t.on),fin:Math.round(t.fin),settle:t.settle}))};
+      DB.results.onset={...s,date:Date.now()};pushHist('onset',{straight:s.straight,onMed:s.onMed});save();
+      cue.textContent='完了';
+      res.insertAdjacentHTML('beforeend',`<p>まっすぐ入れた音: <b>${s.straight} / ${N}</b> ／ 出だしの中央値 ${fmtC(s.onMed)}</p>`);
+      btn.textContent='結果を見る';btn.disabled=false;btn.onclick=()=>go('results');
+    }else{btn.textContent=`${i+1}音目へ`;btn.disabled=false}
+  };
+});
+
+/* ========== フレーズ練習 ========== */
+function makePhrase(n,maxLeap,low,high){
+  for(let tries=0;tries<200;tries++){
+    const ph=[low+Math.floor(Math.random()*(high-low+1))];
+    let ok=true;
+    for(let i=1;i<n;i++){
+      const opts=[];for(let d=-maxLeap;d<=maxLeap;d++)if(d!==0)opts.push(d);
+      const nx=ph[i-1]+opts[Math.floor(Math.random()*opts.length)];
+      if(nx<low||nx>high){ok=false;break}ph.push(nx);
+    }
+    if(ok)return ph;
+  }
+  return Array.from({length:n},(_,i)=>low+i);
+}
+// 声を音ごとの塊に分ける（無声で途切れる or 音の高さが急に変わる所で区切る）
+function segPhrase(arr){
+  const segs=[];let cur=[],gap=0;
+  for(const a of arr){
+    if(!a.f){gap++;if(gap>=2&&cur.length){segs.push(cur);cur=[]}continue}
+    gap=0;let m=f2m(a.f);
+    if(cur.length>=3){
+      const md=median(cur.slice(-4).map(x=>x.m));let d=m-md;
+      const o=Math.round(d/12);if(o){m-=12*o;d-=12*o}
+      if(Math.abs(d)>0.7){segs.push(cur);cur=[]}
+    }
+    cur.push({t:a.t,m});
+  }
+  if(cur.length)segs.push(cur);
+  return segs.filter(s=>s.length>=3).map(s=>{
+    const ref=median(s.map(x=>x.m)),fr=s.map(x=>({t:x.t,m:x.m-12*Math.round((x.m-ref)/12)}));
+    const t0=fr[0].t,dur=fr[fr.length-1].t-t0;
+    const on=median(fr.filter(x=>x.t<=t0+0.06).map(x=>x.m));
+    const tail=fr.filter(x=>x.t>=t0+Math.min(0.1,dur/2));
+    return {t0,dur,on,fin:median(tail.map(x=>x.m)),frames:fr};
+  });
+}
+function analyzePhrase(arr,notes,exp,beat){
+  const segs=segPhrase(arr),res=[];let si=0;
+  for(let k=0;k<notes.length;k++){
+    let best=-1,bd=1e9;
+    for(let j=si;j<segs.length;j++){
+      const d=segs[j].t0-exp[k];
+      if(d<-0.5*beat)continue;if(d>0.9*beat)break;
+      if(Math.abs(d)<bd){bd=Math.abs(d);best=j}
+    }
+    if(best<0){res.push(null);continue}
+    res.push(segs[best]);si=best+1;
+  }
+  const found=res.map((r,k)=>r&&{r,k}).filter(Boolean);
+  if(!found.length)return null;
+  const oct=Math.round(median(found.map(({r,k})=>r.fin-notes[k]))/12);
+  return res.map((r,k)=>{
+    if(!r)return null;
+    const tg=notes[k]+12*oct,fr=r.frames.map(x=>({t:x.t,c:(x.m-tg)*100}));
+    let settle=null;
+    for(let i=0;i+1<fr.length;i++){if(Math.abs(fr[i].c)<=30&&Math.abs(fr[i+1].c)<=30){settle=Math.round((fr[i].t-r.t0)*1000);break}}
+    return {on:(r.on-tg)*100,fin:(r.fin-tg)*100,timing:Math.round((r.t0-exp[k])*1000),settle,t0:r.t0,trace:fr,oct};
+  });
+}
+function drawPhrase(canvas,notes,exp,beat,res,tEnd){
+  const dpr=window.devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
+  canvas.width=w*dpr;canvas.height=h*dpr;const g=canvas.getContext('2d');g.scale(dpr,dpr);
+  const oct=(res||[]).find(r=>r)?.oct||0,ns=notes.map(n=>n+12*oct);
+  const lo=Math.min(...ns)-2,hi=Math.max(...ns)+2,t0=exp[0]-0.3,t1=tEnd;
+  const x=t=>(t-t0)/(t1-t0)*w,y=m=>h-6-(m-lo)/(hi-lo)*(h-12);
+  g.font='11px sans-serif';
+  for(let k=Math.ceil(lo);k<=Math.floor(hi);k++){g.strokeStyle='#22282f';g.beginPath();g.moveTo(0,y(k));g.lineTo(w,y(k));g.stroke()}
+  ns.forEach((m,k)=>{
+    g.fillStyle='rgba(102,187,106,.25)';g.fillRect(x(exp[k]),y(m+0.3),x(exp[k]+beat*0.85)-x(exp[k]),y(m-0.3)-y(m+0.3));
+    g.fillStyle='#66bb6a';g.fillText(nn(m)+' '+nnj(m),x(exp[k])+2,y(m+0.3)-3);
+  });
+  if(res){
+    g.strokeStyle='#4fc3f7';g.lineWidth=2.5;g.lineJoin='round';
+    res.forEach((r,k)=>{if(!r)return;g.beginPath();r.trace.forEach((p,i)=>{const yy=y(ns[k]+p.c/100);i?g.lineTo(x(p.t),yy):g.moveTo(x(p.t),yy)});g.stroke()});
+  }
+}
+VIEWS.phrase=()=>withMic(()=>{
+  const tok=viewId,alive=()=>tok===viewId,st=DB.settings;
+  st.phrase=Object.assign({n:3,bpm:80,leap:2,rounds:6},st.phrase||{});
+  const P=st.phrase,sel=(id,vals,cur,lab)=>`<select id="${id}">${vals.map(v=>`<option value="${v}"${v===cur?' selected':''}>${lab(v)}</option>`).join('')}</select>`;
+  app.innerHTML=hdr('🎼 フレーズ練習')+`
+  <p class="sub">短いフレーズを聞く →「頭の中で鳴らして」でフレーズ全体を思い浮かべる → 「2・1」の後、光る枠に合わせて<b>1音ずつ短く「ア」や「ラ」</b>で歌います。出してから直すのではなく、<b>各音を最初から当てる</b>のが目標です。</p>
+  <div class="card">
+    <div class="row"><div style="flex:1"><label>音の数</label>${sel('pn',[2,3,4],P.n,v=>v+'音')}</div>
+    <div style="flex:1"><label>テンポ</label>${sel('pb',[50,60,80,100,120],P.bpm,v=>'♩='+v)}</div></div>
+    <label>音の動き</label>${sel('pl',[2,4,7],P.leap,v=>v===2?'隣の音まで（1〜2半音）':v===4?'少し跳ぶ（〜4半音）':'大きく跳ぶ（〜7半音）')}
+  </div>
+  <div class="card"><div id="prog" class="sub">0 / ${P.rounds}</div><div id="cue" class="cue">準備OK</div>
+  <div class="row" id="boxes" style="gap:6px;margin-bottom:6px"></div>
+  <canvas id="cv" style="height:200px"></canvas><div id="res"></div>
+  <button class="primary" id="go">1フレーズ目を開始</button></div>
+  <div class="card"><table id="tbl"></table></div>`;
+  const cue=$('#cue'),res=$('#res'),btn=$('#go'),boxes=$('#boxes');
+  const all=[];let round=0;
+  const readP=()=>{P.n=+$('#pn').value;P.bpm=+$('#pb').value;P.leap=+$('#pl').value;save()};
+  ['pn','pb','pl'].forEach(id=>$('#'+id).onchange=readP);
+  btn.onclick=async()=>{
+    readP();['pn','pb','pl'].forEach(id=>$('#'+id).disabled=true);
+    btn.disabled=true;await ensureAudio();if(!alive())return;
+    const beat=60/P.bpm,notes=makePhrase(P.n,P.leap,st.low,st.high),lat=Math.max(0,st.latencyMs??200)/1000;
+    boxes.innerHTML=notes.map((_,k)=>`<div id="bx${k}" style="flex:1;height:34px;border-radius:8px;background:#2a313a"></div>`).join('');
+    const lit=k=>notes.forEach((_,j)=>{$('#bx'+j).style.background=j===k?'#4fc3f7':'#2a313a'});
+    res.innerHTML='';cue.textContent='♪ 聞いて…';
+    const tp=S.ctx.currentTime+0.1;
+    notes.forEach((m,k)=>playTone(m2f(m),beat*0.85,tp+k*beat));
+    for(let k=0;k<notes.length;k++){await sleepUntil(tp+k*beat);if(!alive())return;lit(k)}
+    await sleepUntil(tp+notes.length*beat+lat+0.2);if(!alive())return;lit(-1);
+    cue.textContent='💭 頭の中で鳴らして…';
+    await sleep(Math.max(1000,notes.length*beat*1000));if(!alive())return;
+    const tc=S.ctx.currentTime,exp=notes.map((_,k)=>(2+k)*beat);
+    const rec=collect(((2+notes.length)*beat+0.7)*1000);
+    for(let k=-2;k<notes.length;k++){
+      await sleepUntil(tc+(k+2)*beat);if(!alive())return;
+      if(k<0){cue.textContent=k===-2?'2':'1';lit(-1)}else{cue.textContent='🎤 '+'ア'.repeat(1);lit(k)}
+    }
+    const arr=await rec;if(!alive())return;
+    lit(-1);cue.textContent='—';
+    const r=analyzePhrase(arr,notes,exp,beat);
+    drawPhrase($('#cv'),notes,exp,beat,r,(2+notes.length)*beat+0.4);
+    if(!r){res.innerHTML='<p class="warn">声をうまく拾えませんでした。1音ずつ区切って、はっきり出してみてください。</p>';btn.textContent='やり直す';btn.disabled=false;return}
+    round++;
+    r.forEach((x,k)=>all.push({k,leap:k?Math.abs(notes[k]-notes[k-1]):0,m:notes[k],x}));
+    const rows=r.map((x,k)=>{
+      if(!x)return `<tr><td>${nn(notes[k])}</td><td colspan="3" class="bad">検出なし</td></tr>`;
+      const ok=Math.abs(x.on)<=30;
+      return `<tr><td>${nn(notes[k])}${k?`<span class="sub">（${notes[k]>notes[k-1]?'↑':'↓'}${Math.abs(notes[k]-notes[k-1])}）</span>`:''}</td><td class="${ok?'ok':'warn'}">出だし ${fmtC(x.on)}</td><td class="${cls(x.fin)}">着地 ${fmtC(x.fin)}</td><td class="sub">${x.timing>0?'+':''}${x.timing}ms</td></tr>`;
+    }).join('');
+    res.innerHTML=`<table>${rows}</table><p class="sub">緑の枠＝正解の音とタイミング、青い線＝あなたの声。右端の数字は歌い出しのタイミングのずれ（＋は遅れ）。</p>`;
+    $('#tbl').insertAdjacentHTML('beforeend',`<tr><td>${round}</td><td>${notes.map(nn).join('→')}</td><td>${r.filter(x=>x&&Math.abs(x.on)<=30).length}/${notes.length}</td></tr>`);
+    $('#prog').textContent=`${round} / ${P.rounds}`;
+    if(round>=P.rounds){
+      const got=all.filter(a=>a.x),abs=a=>Math.abs(a.x.on);
+      const med=xs=>xs.length?median(xs):null;
+      const s={n:all.length,notesPer:P.n,bpm:P.bpm,leap:P.leap,
+        straight:got.filter(a=>abs(a)<=30).length,landed:got.filter(a=>Math.abs(a.x.fin)<=30).length,
+        firstAbs:med(got.filter(a=>a.k===0).map(abs)),laterAbs:med(got.filter(a=>a.k>0).map(abs)),
+        stepAbs:med(got.filter(a=>a.k>0&&a.leap<=2).map(abs)),leapAbs:med(got.filter(a=>a.k>0&&a.leap>=3).map(abs))};
+      DB.results.phrase={...s,date:Date.now()};pushHist('phrase',s);save();
+      cue.textContent='完了';
+      res.insertAdjacentHTML('beforeend',`<p>出だしから当てられた音: <b>${s.straight} / ${s.n}</b> ／ 最終的に合った音: ${s.landed} / ${s.n}</p>`);
+      btn.textContent='結果を見る';btn.disabled=false;btn.onclick=()=>go('results');
+    }else{btn.textContent=`${round+1}フレーズ目へ`;btn.disabled=false}
+  };
+});
 
 /* ========== フリー歌唱 ========== */
 function segment(fr){
@@ -602,7 +874,7 @@ function diagnose(){
   const M=[R.match,R.matchVis].filter(Boolean);
   if(M.length){
     const all=M.flatMap(m=>m.trials||[]);
-    const bias=mean(all.map(t=>t.err)),scoop=mean(all.map(t=>t.on-t.err));
+    const bias=mean(all.map(t=>t.err)),scoop=median(all.map(t=>t.on-t.err));
     const center=(DB.settings.low+DB.settings.high)/2;
     const slope=all.length>=6?linreg(all.map(t=>t.m-center),all.map(t=>t.err)):0;
     const octs=M.reduce((s,m)=>s+(m.octs||0),0);
@@ -614,6 +886,24 @@ function diagnose(){
     if(slope<-4){notes.push('高い音ほど低め・低い音ほど高めになる＝楽な音域に引っ張られる傾向');add('range')}
     if(octs>=2)notes.push(`1オクターブずれて歌った音が${octs}回（男性では自然なことも多いので問題ではありません）`);
     if(notes.length)out.push({k:'ずれ方のクセ',v:'',lv:'warn',t:notes.join('<br>')});
+  }
+  if(R.onset){
+    const o=R.onset,rate=o.straight/o.n;let lv=rate>=0.7?'ok':rate>=0.4?'warn':'bad',t;
+    t=`10音中、出だしから目標±30セント以内に入れたのは${o.straight}音。出だしのずれは中央値${fmtC(o.onMed)}${o.settleMed!=null?`、正しい高さに入るまで約${o.settleMed}ms`:''}。`;
+    if(o.onMed<-30){t+='下から入ってすくい上げる傾向（しゃくり）があります。';add('scoop')}
+    else if(o.onMed>30){t+='上から入って下げる傾向があります。';add('scoop')}
+    out.push({k:'🎯 出だし',v:`まっすぐ ${o.straight}/${o.n}`,lv,t});
+  }
+  if(R.phrase){
+    const q=R.phrase,rate=q.straight/q.n;let lv=rate>=0.7?'ok':rate>=0.4?'warn':'bad';
+    let t=`${q.notesPer}音×テンポ${q.bpm}で、出だしから当てられた音は${q.straight}/${q.n}音、最終的に合った音は${q.landed}/${q.n}音。`;
+    if(q.firstAbs!=null&&q.laterAbs!=null){
+      t+=`<br>出だしのずれ（中央値）: 1音目 ${Math.round(q.firstAbs)}セント → 2音目以降 ${Math.round(q.laterAbs)}セント。`;
+      if(q.laterAbs-q.firstAbs>=20)t+='音が移動した後の方がずれが大きく、「次の音を出す前に決める」部分が課題です。';
+    }
+    if(q.stepAbs!=null&&q.leapAbs!=null)t+=`<br>隣の音への移動 ${Math.round(q.stepAbs)}セント ／ 跳躍（3半音以上） ${Math.round(q.leapAbs)}セント。`;
+    if(rate<0.7)add('scoop');
+    out.push({k:'🎼 フレーズ',v:`まっすぐ ${q.straight}/${q.n}`,lv,t});
   }
   if(R.calib){const sd=R.calib.sd;out.push({k:'リズム（タップ）',v:`ばらつき ${sd}ms`,lv:sd<=35?'ok':'warn',t:sd<=20?'リズムはとても安定しています。':sd<=35?'リズムは安定しています。':'タップのタイミングにばらつきがあります。今後のリズム練習モードで鍛えられます。'})}
   return {out,adv,issues};
@@ -639,6 +929,8 @@ VIEWS.results=()=>{
     ['match','matchVis'].forEach(k=>{if(R[k])lines.push(`${k==='match'?'③':'④'}詳細: `+R[k].trials.map(t=>`${nn(t.m)}:${t.err>0?'+':''}${t.err}(出だし${t.on>0?'+':''}${t.on})`).join(', '))});
     if(R.longtone)lines.push(`②詳細: 揺れ${Math.round(R.longtone.sd)}セント 変化${R.longtone.drift.toFixed(1)}セント/秒 音:${(R.longtone.notes||[]).join(',')}`);
     if(R.calib)lines.push(`遅延: ${R.calib.latency}ms ばらつき${R.calib.sd}ms`);
+    if(R.onset)lines.push(`出だし詳細: `+R.onset.trials.map(t=>`${nn(t.m)}:出だし${t.on>0?'+':''}${t.on}→${t.fin>0?'+':''}${t.fin}(${t.settle==null?'未到達':t.settle+'ms'})`).join(', '));
+    if(R.phrase)lines.push(`フレーズ: ${R.phrase.notesPer}音 BPM${R.phrase.bpm} まっすぐ${R.phrase.straight}/${R.phrase.n} 着地${R.phrase.landed}/${R.phrase.n} 出だし|中央値| 1音目${Math.round(R.phrase.firstAbs??0)} 以降${Math.round(R.phrase.laterAbs??0)} 隣${Math.round(R.phrase.stepAbs??0)} 跳躍${Math.round(R.phrase.leapAbs??0)}`);
     if(R.free)lines.push(`フリー歌唱: ${R.free.notes}音 平均ずれ${Math.round(R.free.mae)}セント 傾向${Math.round(R.free.bias)} ±25以内${R.free.within}%`);
     const txt=lines.join('\n');
     const fallback=()=>{$('#cp').innerHTML='<textarea readonly></textarea><p class="sub">上の文字を長押しでコピーしてください。</p>';$('#cp textarea').value=txt};
