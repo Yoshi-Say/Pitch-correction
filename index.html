@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#111418">
-<title>音程トレーナー（診断版）</title>
+<title>音程トレーナー</title>
 <style>
 :root{--bg:#111418;--card:#1b2026;--fg:#e8eaed;--sub:#9aa3ad;--acc:#4fc3f7;--ok:#66bb6a;--warn:#ffb74d;--bad:#ef5350}
 *{box-sizing:border-box}
@@ -250,24 +250,33 @@ function withMic(render){
 VIEWS.home=()=>{
   const R=DB.results,st=DB.settings;
   const item=(go,t,s)=>`<button class="item" data-go="${go}"><b>${t}</b><span>${s}</span></button>`;
-  app.innerHTML=`<h1>音程トレーナー <small>診断版</small></h1>
-  <p class="sub">イヤホンで基準音を聞き、iPhoneのマイクで声を測ります。まず0〜④を順にやると、苦手の原因がわかります。</p>
-  <div class="card">${micActive()?`🎤 <b>${esc(S.trackLabel||'マイク')}</b>${btWarn(S.trackLabel)}`:'<span class="sub">マイク未接続</span>'}
+  const no='未実施';
+  app.innerHTML=`<h1>音程トレーナー</h1>
+  <p class="sub">イヤホンで基準音を聞き、マイクで声を測ります。最初は診断の0〜④を順にどうぞ。</p>
+  <div class="card">${micActive()?`🎤 <b>${esc(S.trackLabel||'マイク')}</b>`:'<span class="sub">マイク未接続</span>'}
     <button class="primary" data-go="mic">${micActive()?'マイクチェック':'マイクを開始・チェック'}</button></div>
-  <div class="card">
-    ${item('calib','0. 遅延キャリブレーション',R.calib?`遅延 ${R.calib.latency}ms／ばらつき ${R.calib.sd}ms`:'未実施')}
-    ${item('disc','① 聴き分け（耳）',R.disc?`約${R.disc.thr}セント`:'未実施')}
-    ${item('longtone','② ロングトーン（安定性）',R.longtone?`揺れ ${Math.round(R.longtone.sd)}セント`:'未実施')}
-    ${item('match','③ 聞いてから歌う',R.match?`平均ずれ ${Math.round(R.match.mae)}セント`:'未実施')}
-    ${item('matchVis','④ 画面を見ながら歌う',R.matchVis?`平均ずれ ${Math.round(R.matchVis.mae)}セント`:'未実施')}
+  <h3>診断</h3><div class="card">
+    ${item('calib','0. 遅延キャリブレーション',R.calib?`遅延 ${R.calib.latency}ms／ばらつき ${R.calib.sd}ms`:no)}
+    ${item('disc','① 聴き分け（耳）',R.disc?`約${R.disc.thr}セント`:no)}
+    ${item('longtone','② ロングトーン（安定性）',R.longtone?`揺れ ${Math.round(R.longtone.sd)}セント`:no)}
+    ${item('match','③ 聞いてから歌う',R.match?`平均ずれ ${Math.round(R.match.mae)}セント`:no)}
+    ${item('matchVis','④ 画面を見ながら歌う',R.matchVis?`平均ずれ ${Math.round(R.matchVis.mae)}セント`:no)}
     <button class="primary" data-go="results">診断結果とアドバイス</button>
   </div>
-  <div class="card">
-    ${item('onset','🎯 出だし練習（しゃくり対策）',R.onset?`まっすぐ ${R.onset.straight}/${R.onset.n}`:'未実施')}
-    ${item('phrase','🎼 フレーズ練習（音の移動）',R.phrase?`まっすぐ ${R.phrase.straight}/${R.phrase.n}音`:'未実施')}
+  <h3>音程の練習</h3><div class="card">
+    ${item('onset','🎯 出だし練習（しゃくり対策）',R.onset?`まっすぐ ${R.onset.straight}/${R.onset.n}`:no)}
+    ${item('phrase','🎼 フレーズ練習（音の移動）',R.phrase?`Lv${(st.phrase?.level??0)+1}・まっすぐ ${R.phrase.straight}/${R.phrase.n}`:no)}
+    ${item('interval','🎹 音階・音程練習',R.interval?`まっすぐ ${R.interval.straight}/${R.interval.n}`:no)}
+    ${item('unison','👥 一緒に歌う（ユニゾン）',R.unison?`平均ずれ ${Math.round(R.unison.mae)}セント`:no)}
   </div>
-  <div class="card">
-    ${item('free','🎵 フリー歌唱（チューナー）',R.free?`前回 ${R.free.notes}音`:'音楽を聞きながら歌う')}
+  <h3>高音・リズム</h3><div class="card">
+    ${item('range','📏 音域チェック',R.range?`${nn(R.range.lo)}〜${nn(R.range.hi)}`:no)}
+    ${item('siren','🚨 サイレン練習（換声点）',R.siren?(R.siren.breaks.length?`切り替わり ${R.siren.breaks.map(nn).join('・')}`:'なめらか'):no)}
+    ${item('rhythm','🥁 リズム練習',R.rhythm?`ばらつき ${R.rhythm.sd}ms`:no)}
+  </div>
+  <h3>記録</h3><div class="card">
+    ${item('free','🎵 フリー歌唱（録音・聞き返し）',R.free?`前回 ${R.free.notes}音`:'音楽を聞きながら歌う')}
+    ${item('history','📈 上達の履歴',`${DB.history.length}件`)}
     ${item('settings','⚙ 設定',`音域 ${nn(st.low)}〜${nn(st.high)}`)}
   </div>`;
 };
@@ -701,72 +710,176 @@ function drawPhrase(canvas,notes,exp,beat,res,tEnd){
     res.forEach((r,k)=>{if(!r)return;g.beginPath();r.trace.forEach((p,i)=>{const yy=y(ns[k]+p.c/100);i?g.lineTo(x(p.t),yy):g.moveTo(x(p.t),yy)});g.stroke()});
   }
 }
+// 録音（聞き返し用）
+function recStart(){
+  if(!window.MediaRecorder||!S.stream)return null;
+  try{
+    const mr=new MediaRecorder(S.stream),ch=[];
+    mr.ondataavailable=e=>{if(e.data&&e.data.size)ch.push(e.data)};
+    mr.start();
+    return {stop:()=>new Promise(res=>{
+      mr.onstop=()=>res(ch.length?URL.createObjectURL(new Blob(ch,{type:mr.mimeType||ch[0].type})):null);
+      try{mr.stop()}catch(e){res(null)}
+    })};
+  }catch(e){return null}
+}
+const audioTag=url=>url?`<p class="sub" style="margin-bottom:0">今の歌を聞き返す:</p><audio controls src="${url}" style="width:100%"></audio>`:'';
+// フレーズを1回「聞く→思い浮かべる→歌う」。戻り値: null=画面を離れた / {r,url}
+async function performPhrase(notes,beat,ui){
+  const st=DB.settings,lat=Math.max(0,st.latencyMs??200)/1000,{cue,boxes,cv,alive}=ui;
+  boxes.innerHTML=notes.map(()=>`<div style="flex:1;height:34px;border-radius:8px;background:#2a313a"></div>`).join('');
+  const bx=[...boxes.children],lit=k=>bx.forEach((b,j)=>b.style.background=j===k?'#4fc3f7':'#2a313a');
+  cue.textContent='♪ 聞いて…';
+  const tp=S.ctx.currentTime+0.1;
+  notes.forEach((m,k)=>playTone(m2f(m),beat*0.85,tp+k*beat));
+  for(let k=0;k<notes.length;k++){await sleepUntil(tp+k*beat);if(!alive())return null;lit(k)}
+  await sleepUntil(tp+notes.length*beat+lat+0.2);if(!alive())return null;lit(-1);
+  cue.textContent='💭 頭の中で鳴らして…';
+  await sleep(clamp(notes.length*beat*1000,1000,2500));if(!alive())return null;
+  const tc=S.ctx.currentTime,exp=notes.map((_,k)=>(2+k)*beat);
+  const rc=recStart(),rec=collect(((2+notes.length)*beat+0.7)*1000);
+  for(let k=-2;k<notes.length;k++){
+    await sleepUntil(tc+(k+2)*beat);
+    if(!alive()){if(rc)rc.stop();return null}
+    if(k<0){cue.textContent=k===-2?'2':'1'}else{cue.textContent='🎤 ア';lit(k)}
+  }
+  const arr=await rec,url=rc?await rc.stop():null;
+  if(!alive())return null;
+  lit(-1);cue.textContent='—';
+  const r=analyzePhrase(arr,notes,exp,beat);
+  drawPhrase(cv,notes,exp,beat,r,(2+notes.length)*beat+0.4);
+  return {r,url};
+}
+function phraseRows(r,notes){
+  return r.map((x,k)=>{
+    const mv=k?`<span class="sub">（${notes[k]>notes[k-1]?'↑':notes[k]<notes[k-1]?'↓':'→'}${Math.abs(notes[k]-notes[k-1])}）</span>`:'';
+    if(!x)return `<tr><td>${nn(notes[k])}${mv}</td><td colspan="3" class="bad">検出なし</td></tr>`;
+    return `<tr><td>${nn(notes[k])}${mv}</td><td class="${Math.abs(x.on)<=30?'ok':'warn'}">出だし ${fmtC(x.on)}</td><td class="${cls(x.fin)}">着地 ${fmtC(x.fin)}</td><td class="sub">${x.timing>0?'+':''}${x.timing}ms</td></tr>`;
+  }).join('');
+}
+const LV=[[2,60,2],[2,80,2],[3,60,2],[3,80,2],[3,80,4],[4,80,4],[4,100,4],[4,100,7],[4,120,7]];
 VIEWS.phrase=()=>withMic(()=>{
   const tok=viewId,alive=()=>tok===viewId,st=DB.settings;
-  st.phrase=Object.assign({n:3,bpm:80,leap:2,rounds:6},st.phrase||{});
-  const P=st.phrase,sel=(id,vals,cur,lab)=>`<select id="${id}">${vals.map(v=>`<option value="${v}"${v===cur?' selected':''}>${lab(v)}</option>`).join('')}</select>`;
+  st.phrase=Object.assign({n:3,bpm:80,leap:2,rounds:6,auto:true,level:0},st.phrase||{});
+  const P=st.phrase;P.level=clamp(P.level,0,LV.length-1);
+  const sel=(id,vals,lab)=>`<select id="${id}">${vals.map(v=>`<option value="${v}">${lab(v)}</option>`).join('')}</select>`;
   app.innerHTML=hdr('🎼 フレーズ練習')+`
   <p class="sub">短いフレーズを聞く →「頭の中で鳴らして」でフレーズ全体を思い浮かべる → 「2・1」の後、光る枠に合わせて<b>1音ずつ短く「ア」や「ラ」</b>で歌います。出してから直すのではなく、<b>各音を最初から当てる</b>のが目標です。</p>
   <div class="card">
-    <div class="row"><div style="flex:1"><label>音の数</label>${sel('pn',[2,3,4],P.n,v=>v+'音')}</div>
-    <div style="flex:1"><label>テンポ</label>${sel('pb',[50,60,80,100,120],P.bpm,v=>'♩='+v)}</div></div>
-    <label>音の動き</label>${sel('pl',[2,4,7],P.leap,v=>v===2?'隣の音まで（1〜2半音）':v===4?'少し跳ぶ（〜4半音）':'大きく跳ぶ（〜7半音）')}
+    <label style="margin-top:0"><input type="checkbox" id="auto"> 自動レベル調整 <b id="lv"></b></label>
+    <p class="sub">1セット（${P.rounds}フレーズ）で7割以上当たると次のレベルへ、4割未満だと1つ戻ります。</p>
+    <div class="row"><div style="flex:1"><label>音の数</label>${sel('pn',[2,3,4],v=>v+'音')}</div>
+    <div style="flex:1"><label>テンポ</label>${sel('pb',[50,60,80,100,120],v=>'♩='+v)}</div></div>
+    <label>音の動き</label>${sel('pl',[2,4,7],v=>v===2?'隣の音まで（1〜2半音）':v===4?'少し跳ぶ（〜4半音）':'大きく跳ぶ（〜7半音）')}
   </div>
   <div class="card"><div id="prog" class="sub">0 / ${P.rounds}</div><div id="cue" class="cue">準備OK</div>
   <div class="row" id="boxes" style="gap:6px;margin-bottom:6px"></div>
   <canvas id="cv" style="height:200px"></canvas><div id="res"></div>
-  <button class="primary" id="go">1フレーズ目を開始</button></div>
+  <button class="primary" id="go">1フレーズ目を開始</button><div id="after"></div></div>
   <div class="card"><table id="tbl"></table></div>`;
-  const cue=$('#cue'),res=$('#res'),btn=$('#go'),boxes=$('#boxes');
+  const cue=$('#cue'),res=$('#res'),btn=$('#go'),ids=['pn','pb','pl'];
+  let started=false;
+  const sync=()=>{
+    if(P.auto)[P.n,P.bpm,P.leap]=LV[P.level];
+    $('#auto').checked=P.auto;$('#lv').textContent=P.auto?`レベル ${P.level+1} / ${LV.length}`:'';
+    $('#pn').value=P.n;$('#pb').value=P.bpm;$('#pl').value=P.leap;
+    ids.forEach(id=>$('#'+id).disabled=P.auto||started);$('#auto').disabled=started;save();
+  };
+  sync();
+  $('#auto').onchange=e=>{P.auto=e.target.checked;sync()};
+  ids.forEach(id=>$('#'+id).onchange=()=>{P.n=+$('#pn').value;P.bpm=+$('#pb').value;P.leap=+$('#pl').value;save()});
   const all=[];let round=0;
-  const readP=()=>{P.n=+$('#pn').value;P.bpm=+$('#pb').value;P.leap=+$('#pl').value;save()};
-  ['pn','pb','pl'].forEach(id=>$('#'+id).onchange=readP);
   btn.onclick=async()=>{
-    readP();['pn','pb','pl'].forEach(id=>$('#'+id).disabled=true);
-    btn.disabled=true;await ensureAudio();if(!alive())return;
-    const beat=60/P.bpm,notes=makePhrase(P.n,P.leap,st.low,st.high),lat=Math.max(0,st.latencyMs??200)/1000;
-    boxes.innerHTML=notes.map((_,k)=>`<div id="bx${k}" style="flex:1;height:34px;border-radius:8px;background:#2a313a"></div>`).join('');
-    const lit=k=>notes.forEach((_,j)=>{$('#bx'+j).style.background=j===k?'#4fc3f7':'#2a313a'});
-    res.innerHTML='';cue.textContent='♪ 聞いて…';
-    const tp=S.ctx.currentTime+0.1;
-    notes.forEach((m,k)=>playTone(m2f(m),beat*0.85,tp+k*beat));
-    for(let k=0;k<notes.length;k++){await sleepUntil(tp+k*beat);if(!alive())return;lit(k)}
-    await sleepUntil(tp+notes.length*beat+lat+0.2);if(!alive())return;lit(-1);
-    cue.textContent='💭 頭の中で鳴らして…';
-    await sleep(Math.max(1000,notes.length*beat*1000));if(!alive())return;
-    const tc=S.ctx.currentTime,exp=notes.map((_,k)=>(2+k)*beat);
-    const rec=collect(((2+notes.length)*beat+0.7)*1000);
-    for(let k=-2;k<notes.length;k++){
-      await sleepUntil(tc+(k+2)*beat);if(!alive())return;
-      if(k<0){cue.textContent=k===-2?'2':'1';lit(-1)}else{cue.textContent='🎤 '+'ア'.repeat(1);lit(k)}
-    }
-    const arr=await rec;if(!alive())return;
-    lit(-1);cue.textContent='—';
-    const r=analyzePhrase(arr,notes,exp,beat);
-    drawPhrase($('#cv'),notes,exp,beat,r,(2+notes.length)*beat+0.4);
-    if(!r){res.innerHTML='<p class="warn">声をうまく拾えませんでした。1音ずつ区切って、はっきり出してみてください。</p>';btn.textContent='やり直す';btn.disabled=false;return}
+    started=true;sync();btn.disabled=true;await ensureAudio();if(!alive())return;
+    const beat=60/P.bpm,notes=makePhrase(P.n,P.leap,st.low,st.high);
+    res.innerHTML='';
+    const o=await performPhrase(notes,beat,{cue,boxes:$('#boxes'),cv:$('#cv'),alive});
+    if(!o)return;
+    const r=o.r;
+    if(!r){res.innerHTML='<p class="warn">声をうまく拾えませんでした。1音ずつ区切って、はっきり出してみてください。</p>'+audioTag(o.url);btn.textContent='やり直す';btn.disabled=false;return}
     round++;
-    r.forEach((x,k)=>all.push({k,leap:k?Math.abs(notes[k]-notes[k-1]):0,m:notes[k],x}));
-    const rows=r.map((x,k)=>{
-      if(!x)return `<tr><td>${nn(notes[k])}</td><td colspan="3" class="bad">検出なし</td></tr>`;
-      const ok=Math.abs(x.on)<=30;
-      return `<tr><td>${nn(notes[k])}${k?`<span class="sub">（${notes[k]>notes[k-1]?'↑':'↓'}${Math.abs(notes[k]-notes[k-1])}）</span>`:''}</td><td class="${ok?'ok':'warn'}">出だし ${fmtC(x.on)}</td><td class="${cls(x.fin)}">着地 ${fmtC(x.fin)}</td><td class="sub">${x.timing>0?'+':''}${x.timing}ms</td></tr>`;
-    }).join('');
-    res.innerHTML=`<table>${rows}</table><p class="sub">緑の枠＝正解の音とタイミング、青い線＝あなたの声。右端の数字は歌い出しのタイミングのずれ（＋は遅れ）。</p>`;
+    r.forEach((x,k)=>all.push({k,leap:k?Math.abs(notes[k]-notes[k-1]):0,x}));
+    res.innerHTML=`<table>${phraseRows(r,notes)}</table><p class="sub">緑の枠＝正解、青い線＝あなたの声。右端はタイミングのずれ（＋は遅れ）。</p>`+audioTag(o.url);
     $('#tbl').insertAdjacentHTML('beforeend',`<tr><td>${round}</td><td>${notes.map(nn).join('→')}</td><td>${r.filter(x=>x&&Math.abs(x.on)<=30).length}/${notes.length}</td></tr>`);
     $('#prog').textContent=`${round} / ${P.rounds}`;
-    if(round>=P.rounds){
-      const got=all.filter(a=>a.x),abs=a=>Math.abs(a.x.on);
-      const med=xs=>xs.length?median(xs):null;
-      const s={n:all.length,notesPer:P.n,bpm:P.bpm,leap:P.leap,
-        straight:got.filter(a=>abs(a)<=30).length,landed:got.filter(a=>Math.abs(a.x.fin)<=30).length,
-        firstAbs:med(got.filter(a=>a.k===0).map(abs)),laterAbs:med(got.filter(a=>a.k>0).map(abs)),
-        stepAbs:med(got.filter(a=>a.k>0&&a.leap<=2).map(abs)),leapAbs:med(got.filter(a=>a.k>0&&a.leap>=3).map(abs))};
-      DB.results.phrase={...s,date:Date.now()};pushHist('phrase',s);save();
-      cue.textContent='完了';
-      res.insertAdjacentHTML('beforeend',`<p>出だしから当てられた音: <b>${s.straight} / ${s.n}</b> ／ 最終的に合った音: ${s.landed} / ${s.n}</p>`);
-      btn.textContent='結果を見る';btn.disabled=false;btn.onclick=()=>go('results');
-    }else{btn.textContent=`${round+1}フレーズ目へ`;btn.disabled=false}
+    if(round<P.rounds){btn.textContent=`${round+1}フレーズ目へ`;btn.disabled=false;return}
+    const got=all.filter(a=>a.x),abs=a=>Math.abs(a.x.on),med=xs=>xs.length?median(xs):null;
+    const s={n:all.length,notesPer:P.n,bpm:P.bpm,leap:P.leap,level:P.auto?P.level+1:null,
+      straight:got.filter(a=>abs(a)<=30).length,landed:got.filter(a=>Math.abs(a.x.fin)<=30).length,
+      firstAbs:med(got.filter(a=>a.k===0).map(abs)),laterAbs:med(got.filter(a=>a.k>0).map(abs)),
+      stepAbs:med(got.filter(a=>a.k>0&&a.leap<=2).map(abs)),leapAbs:med(got.filter(a=>a.k>0&&a.leap>=3).map(abs))};
+    DB.results.phrase={...s,date:Date.now()};pushHist('phrase',s);
+    const rate=s.straight/s.n;let msg='';
+    if(P.auto){
+      if(rate>=0.7&&P.level<LV.length-1){P.level++;msg=`<p class="ok"><b>レベルアップ！ 次はレベル ${P.level+1}</b></p>`}
+      else if(rate>=0.7)msg='<p class="ok"><b>最高レベルをクリアしました</b></p>';
+      else if(rate<0.4&&P.level>0){P.level--;msg=`<p class="warn">少し難しかったようです。レベル ${P.level+1} に戻します。</p>`}
+      else msg='<p class="sub">同じレベルでもう1セット。7割以上で次へ進みます。</p>';
+    }
+    save();
+    cue.textContent='完了';
+    res.insertAdjacentHTML('beforeend',`<p>出だしから当てられた音: <b>${s.straight} / ${s.n}</b>（${Math.round(rate*100)}%）／ 最終的に合った音: ${s.landed} / ${s.n}</p>${msg}`);
+    btn.textContent='次のセットへ';btn.disabled=false;btn.onclick=()=>go('phrase');
+    $('#after').innerHTML='<button data-go="results">診断結果を見る</button>';
+  };
+});
+
+/* ========== 音階・音程練習 ========== */
+const IVN=['同音','半音','全音','短3度','長3度','完全4度','増4度','完全5度','短6度','長6度','短7度','長7度','オクターブ'];
+const mvName=d=>(d>0?'↑':'↓')+(IVN[Math.abs(d)]||Math.abs(d)+'半音');
+const PAT={iv:{name:'2音の音程（ランダム）',rounds:10},scale:{name:'音階（ドレミファソファミレド）',seq:[0,2,4,5,7,5,4,2,0],rounds:4},arp:{name:'和音（ドミソミド）',seq:[0,4,7,4,0],rounds:5}};
+VIEWS.interval=()=>withMic(()=>{
+  const tok=viewId,alive=()=>tok===viewId,st=DB.settings;
+  st.interval=Object.assign({pat:'iv',bpm:70},st.interval||{});
+  const I=st.interval;
+  app.innerHTML=hdr('🎹 音階・音程練習')+`
+  <p class="sub">決まった型（音階・和音・2音の音程）を聞いて、1音ずつ短く歌います。どの音の移動（上がる・下がる、幅）が苦手かを集計します。</p>
+  <div class="card"><label style="margin-top:0">型</label><select id="pat">${Object.entries(PAT).map(([k,p])=>`<option value="${k}"${k===I.pat?' selected':''}>${p.name}</option>`).join('')}</select>
+  <label>テンポ</label><select id="bpm">${[50,60,70,80,100].map(v=>`<option value="${v}"${v===I.bpm?' selected':''}>♩=${v}</option>`).join('')}</select></div>
+  <div class="card"><div id="prog" class="sub"></div><div id="cue" class="cue">準備OK</div>
+  <div class="row" id="boxes" style="gap:4px;margin-bottom:6px"></div>
+  <canvas id="cv" style="height:200px"></canvas><div id="res"></div>
+  <button class="primary" id="go">開始</button><div id="after"></div></div>
+  <div class="card" id="sumc" style="display:none"></div>`;
+  const cue=$('#cue'),res=$('#res'),btn=$('#go');
+  const moves=[],allx=[];let round=0,ks=null;
+  const prog=()=>$('#prog').textContent=`${round} / ${PAT[I.pat].rounds}`;prog();
+  ['pat','bpm'].forEach(id=>$('#'+id).onchange=()=>{I.pat=$('#pat').value;I.bpm=+$('#bpm').value;save();prog()});
+  btn.onclick=async()=>{
+    ['pat','bpm'].forEach(id=>$('#'+id).disabled=true);
+    btn.disabled=true;await ensureAudio();if(!alive())return;
+    const p=PAT[I.pat];let seq=p.seq;
+    if(!seq){
+      if(!ks)ks=[2,3,4,5,7,-2,-3,-4,-5,-7].sort(()=>Math.random()-0.5);
+      seq=[0,ks[round%ks.length]];
+    }
+    const lo=Math.min(...seq),hi=Math.max(...seq),r0=st.low-lo,r1=st.high-hi;
+    const root=r1>r0?r0+Math.floor(Math.random()*(r1-r0+1)):r0;
+    const notes=seq.map(d=>root+d);
+    res.innerHTML='';
+    const o=await performPhrase(notes,60/I.bpm,{cue,boxes:$('#boxes'),cv:$('#cv'),alive});
+    if(!o)return;
+    const r=o.r;
+    if(!r){res.innerHTML='<p class="warn">声をうまく拾えませんでした。1音ずつ区切って、はっきり出してみてください。</p>'+audioTag(o.url);btn.textContent='やり直す';btn.disabled=false;return}
+    round++;prog();
+    r.forEach((x,k)=>{allx.push(x);if(k&&x)moves.push({d:notes[k]-notes[k-1],on:Math.abs(x.on),fin:Math.abs(x.fin)})});
+    res.innerHTML=`<table>${phraseRows(r,notes)}</table>`+audioTag(o.url);
+    if(round<p.rounds){btn.textContent='次へ';btn.disabled=false;return}
+    const ds=[...new Set(moves.map(m=>m.d))].sort((a,b)=>a-b);
+    const by=ds.map(d=>{const g=moves.filter(m=>m.d===d);return {d,on:Math.round(median(g.map(m=>m.on))),fin:Math.round(median(g.map(m=>m.fin))),n:g.length}});
+    const worst=by.length?by.reduce((a,b)=>b.on>a.on?b:a):null;
+    const got=allx.filter(Boolean);
+    const s={pat:I.pat,bpm:I.bpm,n:allx.length,straight:got.filter(x=>Math.abs(x.on)<=30).length,landed:got.filter(x=>Math.abs(x.fin)<=30).length,by,worst};
+    DB.results.interval={...s,date:Date.now()};pushHist('interval',{straight:s.straight,n:s.n,pat:s.pat});save();
+    cue.textContent='完了';
+    $('#sumc').style.display='';
+    $('#sumc').innerHTML=`<p>出だしから当てられた音: <b>${s.straight} / ${s.n}</b> ／ 最終的に合った音: ${s.landed} / ${s.n}</p>
+      <table><tr><td class="sub">音の移動</td><td class="sub">出だしのずれ</td><td class="sub">着地のずれ</td><td class="sub">回数</td></tr>
+      ${by.map(b=>`<tr><td>${mvName(b.d)}</td><td class="${b.on<=30?'ok':b.on<=60?'warn':'bad'}">${b.on}セント</td><td class="${cls(b.fin)}">${b.fin}セント</td><td class="sub">${b.n}</td></tr>`).join('')}</table>
+      ${worst&&worst.on>30?`<p>いちばん苦手な動き: <b>${mvName(worst.d)}</b>。この動きを含む曲のフレーズは、ピアノで音を確認してからゆっくり練習すると効果的です。</p>`:''}
+      <p class="sub">数値は中央値（絶対値）です。</p>`;
+    btn.textContent='もう1セット';btn.disabled=false;btn.onclick=()=>go('interval');
+    $('#after').innerHTML='<button data-go="results">診断結果を見る</button>';
   };
 });
 
@@ -791,15 +904,45 @@ function segment(fr){
   }
   close();return segs;
 }
+// 音程の線を全体表示するグラフ（録音の振り返り・サイレン・音域用）
+function drawTrace(canvas,pts,dur,o={}){
+  const dpr=window.devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
+  if(!w)return;
+  canvas.width=w*dpr;canvas.height=h*dpr;const g=canvas.getContext('2d');g.scale(dpr,dpr);
+  let lo=1e9,hi=-1e9;for(const p of pts)if(p.m!=null){if(p.m<lo)lo=p.m;if(p.m>hi)hi=p.m}
+  if(lo>hi){lo=47;hi=60}
+  lo=Math.floor(lo)-2;hi=Math.ceil(hi)+2;
+  const span=hi-lo,x=t=>t/dur*w,y=m=>h-4-(m-lo)/span*(h-8);
+  g.font='11px sans-serif';
+  for(let k=lo+1;k<hi;k++){
+    const pc=((k%12)+12)%12,lab=span<=13||(span<=27&&[0,4,7].includes(pc))||pc===0;
+    g.strokeStyle=lab?'#2c333b':'#191e24';g.lineWidth=1;g.beginPath();g.moveTo(0,y(k));g.lineTo(w,y(k));g.stroke();
+    if(lab){g.fillStyle='#7b8590';g.fillText(nn(k),4,y(k)-2)}
+  }
+  g.strokeStyle='#4fc3f7';g.lineWidth=2;g.lineJoin='round';g.beginPath();
+  let prev=null;
+  for(const p of pts){
+    if(p.m==null){prev=null;continue}
+    const xx=x(p.t),yy=y(p.m);
+    if(prev==null||Math.abs(p.m-prev)>1.5)g.moveTo(xx,yy);else g.lineTo(xx,yy);
+    prev=p.m;
+  }
+  g.stroke();
+  for(const b of o.marks||[]){
+    g.strokeStyle='#ef5350';g.lineWidth=1.5;g.setLineDash([4,3]);g.beginPath();g.moveTo(x(b.t),0);g.lineTo(x(b.t),h);g.stroke();g.setLineDash([]);
+    g.fillStyle='#ef5350';g.fillText(nn(b.m),Math.min(x(b.t)+3,w-28),12);
+  }
+  if(o.playT!=null){g.strokeStyle='#fff';g.lineWidth=1.5;g.beginPath();g.moveTo(x(o.playT),0);g.lineTo(x(o.playT),h);g.stroke()}
+}
 VIEWS.free=()=>withMic(()=>{
-  const tok=viewId;
-  app.innerHTML=hdr('フリー歌唱（チューナー）')+`
-  <p class="sub">LINE Musicなどを<b>イヤホンで</b>流しながら歌ってみてください。自分の声の音程をリアルタイム表示します。「記録」中に伸ばした音ごとに、近くの半音（ドレミ）からのずれと揺れを集計します。<br>※曲のメロディ自体はわからないので「正しい音か」ではなく「半音にぴったり乗っているか・安定しているか」を見ます。半音以上外れると別の音として数えられます。</p>
+  const tok=viewId,alive=()=>tok===viewId;
+  app.innerHTML=hdr('フリー歌唱（録音・聞き返し）')+`
+  <p class="sub">LINE Musicなどを<b>イヤホンで</b>流しながら、またはアカペラで歌ってください。「記録」中は声を録音し、止めると聞き返せます。<b>先に録音を聞いて「どこでずれたか」を自分で当ててから</b>、答え合わせで音程の線を見るのがおすすめです。<br>※曲のメロディ自体はわからないので、集計は「半音にぴったり乗っているか・安定しているか」を見ます。</p>
   <div class="card"><div class="big" id="note">--</div><div class="sub center" id="cn">&nbsp;</div>
   <canvas id="cv"></canvas>
-  <button class="primary" id="rec">● 記録開始</button><div id="sum"></div></div>`;
+  <button class="primary" id="rec">● 記録開始</button><div id="sum"></div><div id="play"></div></div>`;
   const plot=makePlot($('#cv'),{mode:'free',win:5}),recent=[];
-  let rec=null;
+  let rec=null,rc=null,t0=0,lastUrl=null;
   S.listeners.add(p=>{
     const m=p.f?f2m(p.f):null;plot.add(p.t,m);plot.draw(p.t);
     if(m!=null){recent.push(m);if(recent.length>4)recent.shift()}else recent.length=0;
@@ -809,21 +952,282 @@ VIEWS.free=()=>withMic(()=>{
   });
   $('#rec').onclick=async()=>{
     await ensureAudio();
-    if(!rec){rec=[];$('#rec').textContent='■ 記録停止';$('#sum').innerHTML='<p class="sub center">記録中…</p>';return}
-    const segs=segment(rec);rec=null;$('#rec').textContent='● 記録開始';
-    if(tok!==viewId)return;
-    if(segs.length<3){$('#sum').innerHTML='<p class="warn">伸ばした音が少なすぎて集計できませんでした（0.35秒以上伸ばした音が3つ以上必要）。</p>';return}
-    const devs=segs.map(s=>s.dev),s={notes:segs.length,mae:mean(devs.map(Math.abs)),bias:mean(devs),sd:mean(segs.map(s=>s.sd)),within:Math.round(100*devs.filter(d=>Math.abs(d)<=25).length/devs.length)};
-    DB.results.free={...s,date:Date.now()};pushHist('free',s);save();
-    $('#sum').innerHTML=`<table>
+    if(!rec){
+      rec=[];rc=recStart();t0=S.ctx.currentTime;
+      $('#rec').textContent='■ 記録停止';$('#sum').innerHTML='<p class="sub center">記録中…</p>';$('#play').innerHTML='';return;
+    }
+    const frames=rec;rec=null;$('#rec').textContent='● 記録開始';$('#rec').disabled=true;
+    const url=rc?await rc.stop():null;rc=null;
+    if(!alive())return;
+    $('#rec').disabled=false;
+    const segs=segment(frames);
+    if(segs.length<3)$('#sum').innerHTML='<p class="warn">伸ばした音が少なく、集計はできませんでした（0.35秒以上伸ばした音が3つ以上必要）。</p>';
+    else{
+      const devs=segs.map(s=>s.dev),s={notes:segs.length,mae:mean(devs.map(Math.abs)),bias:mean(devs),sd:mean(segs.map(s=>s.sd)),within:Math.round(100*devs.filter(d=>Math.abs(d)<=25).length/devs.length)};
+      DB.results.free={...s,date:Date.now()};pushHist('free',s);save();
+      $('#sum').innerHTML=`<table>
       <tr><td>集計できた音</td><td><b>${s.notes}音</b></td></tr>
       <tr><td>半音からの平均ずれ</td><td><b class="${cls(s.mae)}">${Math.round(s.mae)}セント</b></td></tr>
       <tr><td>±25セント以内の割合</td><td><b>${s.within}%</b></td></tr>
       <tr><td>全体の傾向</td><td>${fmtC(s.bias)}（${dirTxt(s.bias)}）</td></tr>
-      <tr><td>1音内の揺れ（平均）</td><td>${Math.round(s.sd)}セント</td></tr></table>
-      <p class="sub">ビブラートをかけた音は揺れが大きく出ます。原曲のキーが標準ピッチ（A=440Hz）からずれている曲では、全体の傾向が偏って出ることがあります。</p>`;
+      <tr><td>1音内の揺れ（平均）</td><td>${Math.round(s.sd)}セント</td></tr></table>`;
+    }
+    if(lastUrl)try{URL.revokeObjectURL(lastUrl)}catch(e){}
+    lastUrl=url;
+    const pts=frames.map(f=>({t:f.t-t0,m:f.m})),dur=Math.max(1,pts.length?pts[pts.length-1].t:1);
+    $('#play').innerHTML=(url?`<label>録音を聞き返す</label><audio id="au" controls src="${url}" style="width:100%"></audio>`:'<p class="sub">このブラウザでは録音の再生に対応していません。音程の線だけ表示できます。</p>')
+      +`<button id="show">答え合わせ（音程の線を表示）</button><canvas id="tr" style="display:none;height:240px"></canvas>`;
+    $('#show').onclick=()=>{
+      const cv=$('#tr'),au=$('#au');cv.style.display='block';$('#show').style.display='none';
+      let last=-1;
+      const tick=()=>{
+        if(!alive()||!cv.isConnected)return;
+        const t=au?au.currentTime:0;
+        if(t!==last){last=t;drawTrace(cv,pts,dur,{playT:au?t:null})}
+        requestAnimationFrame(tick);
+      };
+      tick();
+    };
   };
 });
+
+/* ========== 音域チェック ========== */
+function analyzeRange(frames){
+  const bins={};
+  for(const a of frames)if(a.f){const k=Math.round(f2m(a.f));bins[k]=(bins[k]||0)+1}
+  const ks=Object.keys(bins).map(Number).filter(k=>bins[k]>=6);
+  if(!ks.length)return null;
+  return {lo:Math.min(...ks),hi:Math.max(...ks)};
+}
+VIEWS.range=()=>withMic(()=>{
+  const tok=viewId,alive=()=>tok===viewId,st=DB.settings,DUR=8;
+  const steps=[['低い方','楽な高さの「あー」から少しずつ下げて、出せる一番低い音で1秒ほど伸ばします。'],['高い方','楽な高さの「あー」から少しずつ上げて、無理なく出せる一番高い音で1秒ほど伸ばします。裏声は使わず、ノドが痛くなる手前で止めてください。']];
+  app.innerHTML=hdr('📏 音域チェック')+`
+  <p class="sub">今の声で出せる最低音と最高音を測り、練習音域の設定に反映できます。低い方→高い方の順に、各${DUR}秒です。</p>
+  <div class="card"><div id="cue" class="cue">準備OK</div><p id="inst" class="sub">${steps[0][1]}</p>
+  <canvas id="cv" style="height:200px"></canvas><div id="res"></div>
+  <button class="primary" id="go">低い方を測る</button></div>`;
+  const cue=$('#cue'),btn=$('#go');let frames=[],step=0;
+  drawTrace($('#cv'),[],DUR);
+  btn.onclick=async()=>{
+    btn.disabled=true;await ensureAudio();
+    for(const c of ['3','2','1']){cue.textContent=c;await sleep(600);if(!alive())return}
+    cue.textContent=`🎤 ${steps[step][0]}へ（${DUR}秒）`;
+    const pts=[],cv=$('#cv');
+    const arr=await collect(DUR*1000,p=>{pts.push({t:pts.length*0.025,m:p.f?f2m(p.f):null});drawTrace(cv,pts,DUR)});
+    if(!alive())return;
+    frames=frames.concat(arr);step++;cue.textContent='—';
+    if(step<2){$('#inst').textContent=steps[1][1];btn.textContent='高い方を測る';btn.disabled=false;return}
+    const r=analyzeRange(frames);
+    if(!r){$('#res').innerHTML='<p class="warn">声をうまく拾えませんでした。もう一度どうぞ。</p>';frames=[];step=0;$('#inst').textContent=steps[0][1];btn.textContent='低い方を測る';btn.disabled=false;return}
+    DB.results.range={...r,date:Date.now()};pushHist('range',r);save();
+    let lo=clamp(r.lo+2,36,79),hi=clamp(r.hi-2,36,79);if(hi-lo<5){lo=clamp(r.lo,36,79);hi=clamp(r.hi,36,79)}
+    $('#inst').textContent='';
+    $('#res').innerHTML=`<p>最低音 <b>${nn(r.lo)}（${nnj(r.lo)}）</b> ／ 最高音 <b>${nn(r.hi)}（${nnj(r.hi)}）</b></p>
+      <p class="sub">幅は${r.hi-r.lo}半音（約${((r.hi-r.lo)/12).toFixed(1)}オクターブ）。0.15秒以上出せた音だけを数えています。</p>
+      <p>練習音域の提案: <b>${nn(lo)}〜${nn(hi)}</b>（両端を少し内側にした、無理のない範囲）</p>
+      <button id="apply">この音域を練習に使う</button><p class="sub" id="ap">現在の設定: ${nn(st.low)}〜${nn(st.high)}</p>`;
+    $('#apply').onclick=()=>{st.low=lo;st.high=hi;save();$('#ap').innerHTML=`<span class="ok">設定しました: ${nn(lo)}〜${nn(hi)}</span>`};
+    btn.textContent='ホームへ';btn.disabled=false;btn.onclick=()=>go('home');
+  };
+});
+
+/* ========== サイレン練習 ========== */
+function analyzeSiren(arr){
+  const v=arr.filter(a=>a.f).map(a=>({t:a.t,m:f2m(a.f)}));
+  if(v.length<20)return null;
+  const s=v.map(a=>a.m).sort((a,b)=>a-b),q=p=>s[Math.min(s.length-1,Math.floor(p*s.length))];
+  const br=[];
+  for(let i=1;i<v.length;i++){
+    const dt=v[i].t-v[i-1].t,d=Math.abs(v[i].m-v[i-1].m);
+    let kind=null;
+    if(dt<0.08){if(d>1.5&&Math.abs(d-12)>1&&Math.abs(d-24)>1)kind='jump'}
+    else if(dt<0.6)kind='gap';
+    if(kind&&(!br.length||v[i].t-br[br.length-1].t>0.3))br.push({t:v[i-1].t,m:Math.round(v[i-1].m),kind});
+  }
+  return {lo:Math.round(q(0.02)),hi:Math.round(q(0.98)),breaks:br};
+}
+VIEWS.siren=()=>withMic(()=>{
+  const tok=viewId,alive=()=>tok===viewId,DUR=8;
+  app.innerHTML=hdr('🚨 サイレン練習')+`
+  <p class="sub">「う〜」またはリップロール（唇をプルプル）で、<b>低い音から高い音へ、切れ目なくゆっくり</b>ずり上げます（余裕があれば下りも）。${DUR}秒です。声が裏返ったり途切れたりする高さ（換声点）を赤い線で表示します。</p>
+  <div class="card"><div id="cue" class="cue">準備OK</div>
+  <canvas id="cv" style="height:240px"></canvas><div id="res"></div>
+  <button class="primary" id="go">開始</button></div>
+  <div class="card sub"><b>コツ</b><ul><li>小さめの声で。大きく張り上げると切り替わりが目立ちます。</li><li>切り替わる高さの少し下から、息を多めにして軽い声で通過する練習を繰り返します。</li><li>段差がなくなる、または段差の高さが上がっていけば、地声と裏声がつながってきています。</li><li>「ミックスボイスが出ているか」の判定はできません。つながり具合の目安として使ってください。</li></ul></div>`;
+  const cue=$('#cue'),btn=$('#go'),cv=$('#cv');
+  drawTrace(cv,[],DUR);
+  btn.onclick=async()=>{
+    btn.disabled=true;await ensureAudio();$('#res').innerHTML='';
+    for(const c of ['3','2','1']){cue.textContent=c;await sleep(600);if(!alive())return}
+    cue.textContent=`🎤 低い音 → 高い音へ（${DUR}秒）`;
+    const pts=[];
+    const arr=await collect(DUR*1000,p=>{pts.push({t:p.t,m:p.f?f2m(p.f):null});drawTrace(cv,pts.map(x=>({t:x.t-pts[0].t,m:x.m})),DUR)});
+    if(!alive())return;
+    cue.textContent='—';btn.disabled=false;btn.textContent='もう一度';
+    const r=analyzeSiren(arr);
+    if(!r){$('#res').innerHTML='<p class="warn">声をうまく拾えませんでした。もう一度どうぞ。</p>';return}
+    drawTrace(cv,arr.map(a=>({t:a.t,m:a.f?f2m(a.f):null})),DUR,{marks:r.breaks});
+    DB.results.siren={lo:r.lo,hi:r.hi,breaks:r.breaks.map(b=>b.m),date:Date.now()};
+    pushHist('siren',{hi:r.hi,nb:r.breaks.length,first:r.breaks[0]?.m??null});save();
+    $('#res').innerHTML=`<p>動かせた範囲: <b>${nn(r.lo)}〜${nn(r.hi)}</b>（${r.hi-r.lo}半音）</p>`+
+      (r.breaks.length?`<p class="warn">声の切り替わり・途切れ: ${r.breaks.length}か所</p><ul>${r.breaks.map(b=>`<li><b>${nn(b.m)}（${nnj(b.m)}）</b>付近で${b.kind==='jump'?'音が段差になりました（裏返り）':'声が途切れました'}</li>`).join('')}</ul>`
+        :'<p class="ok">切れ目なく、なめらかにつながっています。</p>');
+  };
+});
+
+/* ========== 一緒に歌う（ユニゾン） ========== */
+VIEWS.unison=()=>withMic(()=>{
+  const tok=viewId,alive=()=>tok===viewId,st=DB.settings,N=6,DUR=4,trials=[],targets=[];
+  let last=null;
+  for(let i=0;i<N;i++){let m;do{m=st.low+Math.floor(Math.random()*(st.high-st.low+1))}while(m===last&&st.high>st.low);targets.push(m);last=m}
+  app.innerHTML=hdr('👥 一緒に歌う（ユニゾン）')+`
+  <p class="sub">基準音が${DUR}秒鳴り続けます。<b>鳴っている間、同じ高さで「あー」と重ねて</b>歌ってください。ぴったり合うと、うなり（音のにごり）が消えて1つの音に聞こえます。伴奏に合わせて歌う感覚の練習です。全${N}音。<br>※必ずイヤホンで。スピーカーだと基準音をマイクが拾ってしまいます。</p>
+  <div class="card"><div id="prog" class="sub">0 / ${N}</div><div id="cue" class="cue">準備OK</div>
+  <canvas id="cv"></canvas><div id="res"></div>
+  <button class="primary" id="go">1音目を開始</button></div>
+  <div class="card"><table id="tbl"></table></div>`;
+  const cue=$('#cue'),res=$('#res'),btn=$('#go');let i=0;
+  btn.onclick=async()=>{
+    btn.disabled=true;await ensureAudio();if(!alive())return;
+    const m=targets[i],f=m2f(m);
+    res.innerHTML='';cue.textContent='🎤 一緒に歌って！';
+    const plot=makePlot($('#cv'),{mode:'target',target:m,win:DUR+0.5});
+    playTone(f,DUR);
+    const arr=await collect(DUR*1000+300,p=>{plot.add(p.t,p.f?f2m(p.f)-12*Math.round(cents(p.f,f)/1200):null);plot.draw(p.t)});
+    if(!alive())return;
+    cue.textContent='—';
+    const v=foldOct(arr.filter(a=>a.f)),s=v.length?v.filter(a=>a.t>=v[0].t+0.5):[];
+    if(s.length<15){res.innerHTML='<p class="warn">声をうまく拾えませんでした。基準音が鳴っている間、ずっと伸ばしてみてください。</p>';btn.textContent='やり直す';btn.disabled=false;return}
+    const raw=cents(median(s.map(a=>a.f)),f),oct=Math.round(raw/1200),cs=s.map(a=>cents(a.f,f)-1200*oct);
+    const r={m,err:raw-1200*oct,within:Math.round(100*cs.filter(c=>Math.abs(c)<=20).length/cs.length)};
+    trials.push(r);i++;
+    res.innerHTML=`<p>${nn(m)}（${nnj(m)}）: <b class="${cls(r.err)}">${fmtC(r.err)}</b> ${dirTxt(r.err)} ／ ±20セント以内にいた時間 <b>${r.within}%</b></p>`;
+    $('#tbl').insertAdjacentHTML('beforeend',`<tr><td>${i}</td><td>${nn(m)}</td><td class="${cls(r.err)}">${fmtC(r.err)}</td><td class="sub">${r.within}%</td></tr>`);
+    $('#prog').textContent=`${i} / ${N}`;
+    if(i<N){btn.textContent=`${i+1}音目へ`;btn.disabled=false;return}
+    const s2={n:N,mae:mean(trials.map(t=>Math.abs(t.err))),bias:mean(trials.map(t=>t.err)),within:Math.round(mean(trials.map(t=>t.within)))};
+    DB.results.unison={...s2,date:Date.now()};pushHist('unison',s2);save();
+    cue.textContent='完了';
+    res.insertAdjacentHTML('beforeend',`<p>平均ずれ: <b>${Math.round(s2.mae)}セント</b> ／ 合っていた時間: <b>${s2.within}%</b>${DB.results.match?`<br><span class="sub">参考: ③聞いてから歌う ${Math.round(DB.results.match.mae)}セント。これより大きく悪いなら、音が鳴っている中で自分の声を聞くのが課題です。</span>`:''}</p>`);
+    btn.textContent='結果を見る';btn.disabled=false;btn.onclick=()=>go('results');
+  };
+});
+
+/* ========== リズム練習 ========== */
+function drawBars(canvas,beats){
+  const dpr=window.devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
+  canvas.width=w*dpr;canvas.height=h*dpr;const g=canvas.getContext('2d');g.scale(dpr,dpr);
+  const n=beats.length,bw=w/n,R=150,y=o=>h/2-clamp(o,-R,R)/R*(h/2-12);
+  beats.forEach((b,i)=>{if(b.sil){g.fillStyle='#1a2029';g.fillRect(i*bw,0,bw,h)}});
+  g.strokeStyle='#66bb6a';g.lineWidth=1.5;g.beginPath();g.moveTo(0,h/2);g.lineTo(w,h/2);g.stroke();
+  g.font='11px sans-serif';g.fillStyle='#7b8590';g.fillText('遅い ↑',4,12);g.fillText('早い ↓',4,h-4);
+  beats.forEach((b,i)=>{
+    if(b.off==null){g.fillStyle='#ef5350';g.fillText('×',i*bw+bw/2-3,h/2-3);return}
+    g.fillStyle=Math.abs(b.off)<=30?'#66bb6a':Math.abs(b.off)<=60?'#ffb74d':'#ef5350';
+    const yy=y(b.off);g.fillRect(i*bw+2,Math.min(yy,h/2),Math.max(1,bw-4),Math.max(2,Math.abs(yy-h/2)));
+  });
+}
+VIEWS.rhythm=()=>{
+  const tok=viewId,alive=()=>tok===viewId,st=DB.settings,COUNT=4,BEATS=24;
+  st.rhythm=Object.assign({bpm:80,mode:'gap'},st.rhythm||{});
+  const Rm=st.rhythm;
+  app.innerHTML=hdr('🥁 リズム練習')+`
+  <p class="sub">クリック音に合わせて枠をタップします。最初の4拍（高い音）は準備で、その後の${BEATS}拍を計測します。「クリックが消える」モードでは4拍ごとに音が消えるので、<b>消えている間も同じ速さでタップ</b>を続けてください。自分の中でテンポを保つ力がわかります。マイクは使いません。</p>
+  <div class="card"><div class="row"><div style="flex:1"><label style="margin-top:0">テンポ</label><select id="bpm">${[60,80,100,120,140].map(v=>`<option value="${v}"${v===Rm.bpm?' selected':''}>♩=${v}</option>`).join('')}</select></div>
+  <div style="flex:1"><label style="margin-top:0">モード</label><select id="mode"><option value="gap"${Rm.mode==='gap'?' selected':''}>クリックが消える</option><option value="every"${Rm.mode==='every'?' selected':''}>ずっと鳴る</option></select></div></div></div>
+  <div class="pad" id="pad">ここをタップ</div>
+  <div id="st" class="center sub"></div>
+  <button class="primary" id="start">スタート</button>
+  <canvas id="cv" style="height:150px;display:none"></canvas><div id="res"></div>`;
+  const pad=$('#pad'),stEl=$('#st');let taps=null;
+  ['bpm','mode'].forEach(id=>$('#'+id).onchange=()=>{Rm.bpm=+$('#bpm').value;Rm.mode=$('#mode').value;save()});
+  pad.addEventListener('pointerdown',e=>{
+    e.preventDefault();if(!taps)return;
+    taps.push(S.ctx.currentTime);pad.classList.add('flash');setTimeout(()=>pad.classList.remove('flash'),80);
+  });
+  $('#start').onclick=async()=>{
+    await ensureAudio();if(!alive())return;
+    $('#start').disabled=true;$('#res').innerHTML='';
+    const iv=60/Rm.bpm,t0=S.ctx.currentTime+0.6,beats=[];
+    for(let i=0;i<COUNT+BEATS;i++){
+      const t=t0+i*iv,k=i-COUNT,sil=k>=0&&Rm.mode==='gap'&&Math.floor(k/4)%2===1;
+      if(!sil)click(t,i<COUNT);
+      if(k>=0)beats.push({t,sil});
+    }
+    taps=[];
+    const end=t0+(COUNT+BEATS)*iv+0.4;
+    while(S.ctx.currentTime<end){
+      if(!alive())return;
+      const k=Math.floor((S.ctx.currentTime-t0)/iv)-COUNT;
+      stEl.textContent=k<-COUNT?'準備…':k<0?`準備 ${k+COUNT+1}/${COUNT}`:`${Math.min(k+1,BEATS)}/${BEATS}${beats[Math.min(k,BEATS-1)].sil?'（音なし・そのまま続けて）':''}`;
+      await sleep(50);
+    }
+    const lat=st.latencyMs??0,tp=taps;taps=null;
+    beats.forEach(b=>{
+      let best=null;for(const t of tp){if(best==null||Math.abs(t-b.t)<Math.abs(best-b.t))best=t}
+      b.off=best!=null&&Math.abs(best-b.t)<iv/2?(best-b.t)*1000-lat:null;
+    });
+    $('#start').disabled=false;$('#start').textContent='もう一度';stEl.textContent='';
+    const got=beats.filter(b=>b.off!=null);
+    if(got.length<BEATS*0.6){$('#res').innerHTML='<p class="warn">タップが少なすぎました。もう一度どうぞ。</p>';return}
+    const cv=$('#cv');cv.style.display='block';drawBars(cv,beats);
+    const offs=got.map(b=>b.off),aud=got.filter(b=>!b.sil).map(b=>b.off),sil=got.filter(b=>b.sil).map(b=>b.off);
+    const s={bpm:Rm.bpm,mode:Rm.mode,n:got.length,bias:Math.round(median(offs)),sd:Math.round(std(offs)),
+      sdAud:Math.round(std(aud)),sdSil:sil.length>3?Math.round(std(sil)):null,shift:sil.length>3?Math.round(median(sil)-median(aud)):null};
+    DB.results.rhythm={...s,date:Date.now()};pushHist('rhythm',s);save();
+    const tend=s.bias<-25?'<span class="warn">走り気味（早い）</span>':s.bias>25?'<span class="warn">もたり気味（遅い）</span>':'<span class="ok">ちょうど良い</span>';
+    const sdc=s.sd<=25?'ok':s.sd<=45?'warn':'bad';
+    $('#res').innerHTML=`<div class="card"><p>全体の傾向: <b>${s.bias>0?'+':''}${s.bias}ms</b>（${tend}）</p><p>ばらつき: <b class="${sdc}">${s.sd}ms</b></p>
+      ${s.shift!=null?`<p>クリックが消えている間: ばらつき <b>${s.sdSil}ms</b>（鳴っている間 ${s.sdAud}ms）、タイミングは <b>${s.shift>0?'+':''}${s.shift}ms</b> ${Math.abs(s.shift)<=25?'で安定':s.shift<0?'＝音が消えると早くなる（走る）傾向':'＝音が消えると遅くなる（もたる）傾向'}</p>`:''}
+      <p class="sub">グラフ: 1本が1拍。緑の線ぴったりが理想で、上が遅い・下が早い。暗い帯はクリックが消えていた拍。${st.latencyMs==null?'遅延キャリブレーションが未実施のため、早い・遅いの判定は参考値です。':'イヤホンの遅延は補正済みです。'}</p></div>`;
+  };
+};
+
+/* ========== 上達の履歴 ========== */
+function drawLine(canvas,vals,fmt){
+  const dpr=window.devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
+  canvas.width=w*dpr;canvas.height=h*dpr;const g=canvas.getContext('2d');g.scale(dpr,dpr);
+  let lo=Math.min(...vals),hi=Math.max(...vals);if(hi-lo<1e-6){lo-=1;hi+=1}
+  const pad=(hi-lo)*0.15;lo-=pad;hi+=pad;
+  const L=44,x=i=>vals.length>1?L+i/(vals.length-1)*(w-L-12):(L+w-12)/2,y=v=>h-10-(v-lo)/(hi-lo)*(h-22);
+  g.font='11px sans-serif';g.fillStyle='#7b8590';g.strokeStyle='#2c333b';
+  for(const v of [Math.max(...vals),Math.min(...vals)]){g.beginPath();g.moveTo(L,y(v));g.lineTo(w,y(v));g.stroke();g.fillText(fmt(v),2,y(v)+4)}
+  g.strokeStyle='#4fc3f7';g.lineWidth=2;g.beginPath();vals.forEach((v,i)=>i?g.lineTo(x(i),y(v)):g.moveTo(x(i),y(v)));g.stroke();
+  g.fillStyle='#4fc3f7';vals.forEach((v,i)=>{g.beginPath();g.arc(x(i),y(v),3,0,7);g.fill()});
+}
+const HM=[
+  ['disc','① 聴き分け',h=>h.thr,v=>Math.round(v)+'セント','小さいほど良い'],
+  ['longtone','② ロングトーンの揺れ',h=>h.sd,v=>Math.round(v)+'セント','小さいほど良い'],
+  ['match','③ 聞いてから歌う（平均ずれ）',h=>h.mae,v=>Math.round(v)+'セント','小さいほど良い'],
+  ['matchVis','④ 見ながら歌う（平均ずれ）',h=>h.mae,v=>Math.round(v)+'セント','小さいほど良い'],
+  ['onset','🎯 出だし まっすぐ率',h=>h.straight*10,v=>Math.round(v)+'%','大きいほど良い'],
+  ['phrase','🎼 フレーズ まっすぐ率',h=>100*h.straight/h.n,v=>Math.round(v)+'%','大きいほど良い'],
+  ['interval','🎹 音階・音程 まっすぐ率',h=>100*h.straight/h.n,v=>Math.round(v)+'%','大きいほど良い'],
+  ['unison','👥 一緒に歌う（平均ずれ）',h=>h.mae,v=>Math.round(v)+'セント','小さいほど良い'],
+  ['free','🎵 フリー歌唱（半音からの平均ずれ）',h=>h.mae,v=>Math.round(v)+'セント','小さいほど良い'],
+  ['range','📏 最高音（音域チェック）',h=>h.hi,v=>nn(v),'高いほど音域が広い'],
+  ['siren','🚨 サイレンで届いた最高音',h=>h.hi,v=>nn(v),'高いほど音域が広い'],
+  ['rhythm','🥁 リズムのばらつき',h=>h.sd,v=>Math.round(v)+'ms','小さいほど良い'],
+  ['calib','タップのばらつき（キャリブレーション）',h=>h.sd,v=>Math.round(v)+'ms','小さいほど良い'],
+];
+VIEWS.history=()=>{
+  const d=t=>{const x=new Date(t);return (x.getMonth()+1)+'/'+x.getDate()};
+  const cards=HM.map(([key,title,get,fmt,note],i)=>{
+    const hs=DB.history.filter(h=>h.key===key&&Number.isFinite(get(h)));
+    if(!hs.length)return '';
+    const vals=hs.map(get),first=vals[0],lastv=vals[vals.length-1];
+    return `<div class="card"><b>${title}</b> <span style="float:right">${fmt(lastv)}</span>
+      <canvas data-h="${i}" style="height:110px"></canvas>
+      <div class="sub">${d(hs[0].date)}〜${d(hs[hs.length-1].date)}・${hs.length}回${hs.length>1?`・最初 ${fmt(first)} → 最新 ${fmt(lastv)}`:''}（${note}）</div></div>`;
+  }).join('');
+  app.innerHTML=hdr('📈 上達の履歴')+(cards||'<div class="card sub">まだ記録がありません。テストや練習を行うと、ここに推移が表示されます。</div>')
+    +'<p class="sub">記録はこのiPhoneのブラウザ内にだけ保存されます（最新200件）。</p>';
+  document.querySelectorAll('canvas[data-h]').forEach(cv=>{
+    const [key,,get,fmt]=HM[+cv.dataset.h];
+    drawLine(cv,DB.history.filter(h=>h.key===key&&Number.isFinite(get(h))).map(get),fmt);
+  });
+};
 
 /* ========== 診断 ========== */
 const ADV={
@@ -905,6 +1309,23 @@ function diagnose(){
     if(rate<0.7)add('scoop');
     out.push({k:'🎼 フレーズ',v:`まっすぐ ${q.straight}/${q.n}`,lv,t});
   }
+  if(R.interval){
+    const q=R.interval,rate=q.straight/q.n,w=q.worst;
+    out.push({k:'🎹 音階・音程',v:`まっすぐ ${q.straight}/${q.n}`,lv:rate>=0.7?'ok':rate>=0.4?'warn':'bad',
+      t:`${PAT[q.pat]?.name||''}で、出だしから当てられた音は${q.straight}/${q.n}音。`+(w&&w.on>30?`いちばん苦手な動きは<b>${mvName(w.d)}</b>（出だしのずれ ${w.on}セント）。`:'苦手な動きは特に見当たりません。')});
+  }
+  if(R.unison){
+    const u=R.unison;let t=`基準音と同時に歌ったときの平均ずれ ${Math.round(u.mae)}セント、合っていた時間 ${u.within}%。`;
+    if(R.match&&u.mae-R.match.mae>=15){t+='音が鳴っていない時より大きくずれます。伴奏の中で自分の声を聞き取るのが課題です。';add('monitor')}
+    out.push({k:'👥 一緒に歌う',v:`平均 ${Math.round(u.mae)}セント`,lv:u.mae<=25?'ok':'warn',t});
+  }
+  if(R.range)out.push({k:'📏 音域',v:`${nn(R.range.lo)}〜${nn(R.range.hi)}`,lv:'ok',t:`今の声で出せる範囲は${R.range.hi-R.range.lo}半音（約${((R.range.hi-R.range.lo)/12).toFixed(1)}オクターブ）です。`});
+  if(R.siren)out.push({k:'🚨 サイレン',v:`${nn(R.siren.lo)}〜${nn(R.siren.hi)}`,lv:R.siren.breaks.length?'warn':'ok',t:R.siren.breaks.length?`${R.siren.breaks.map(nn).join('・')}付近で声が切り替わり・途切れています。この高さの少し下から、軽い声で通過する練習が有効です。`:'低音から高音まで切れ目なくつながっています。'});
+  if(R.rhythm){
+    const r=R.rhythm;let t=`♩=${r.bpm}でのばらつき ${r.sd}ms、傾向 ${r.bias>0?'+':''}${r.bias}ms（${r.bias<-25?'走り気味':r.bias>25?'もたり気味':'ちょうど良い'}）。`;
+    if(r.shift!=null&&Math.abs(r.shift)>25)t+=`クリックが消えると${r.shift<0?'早く':'遅く'}なる傾向があります。`;
+    out.push({k:'🥁 リズム練習',v:`ばらつき ${r.sd}ms`,lv:r.sd<=25?'ok':r.sd<=45?'warn':'bad',t});
+  }
   if(R.calib){const sd=R.calib.sd;out.push({k:'リズム（タップ）',v:`ばらつき ${sd}ms`,lv:sd<=35?'ok':'warn',t:sd<=20?'リズムはとても安定しています。':sd<=35?'リズムは安定しています。':'タップのタイミングにばらつきがあります。今後のリズム練習モードで鍛えられます。'})}
   return {out,adv,issues};
 }
@@ -931,6 +1352,9 @@ VIEWS.results=()=>{
     if(R.calib)lines.push(`遅延: ${R.calib.latency}ms ばらつき${R.calib.sd}ms`);
     if(R.onset)lines.push(`出だし詳細: `+R.onset.trials.map(t=>`${nn(t.m)}:出だし${t.on>0?'+':''}${t.on}→${t.fin>0?'+':''}${t.fin}(${t.settle==null?'未到達':t.settle+'ms'})`).join(', '));
     if(R.phrase)lines.push(`フレーズ: ${R.phrase.notesPer}音 BPM${R.phrase.bpm} まっすぐ${R.phrase.straight}/${R.phrase.n} 着地${R.phrase.landed}/${R.phrase.n} 出だし|中央値| 1音目${Math.round(R.phrase.firstAbs??0)} 以降${Math.round(R.phrase.laterAbs??0)} 隣${Math.round(R.phrase.stepAbs??0)} 跳躍${Math.round(R.phrase.leapAbs??0)}`);
+    if(R.interval)lines.push(`音階・音程詳細(${R.interval.pat}): `+R.interval.by.map(b=>`${mvName(b.d)}:出だし${b.on}/着地${b.fin}(${b.n}回)`).join(', '));
+    if(R.siren)lines.push(`サイレン詳細: ${nn(R.siren.lo)}〜${nn(R.siren.hi)} 切り替わり:${R.siren.breaks.map(nn).join(',')||'なし'}`);
+    if(R.rhythm)lines.push(`リズム詳細: BPM${R.rhythm.bpm} ${R.rhythm.mode} 傾向${R.rhythm.bias}ms ばらつき${R.rhythm.sd}ms 無音時${R.rhythm.sdSil??'-'}ms ずれ${R.rhythm.shift??'-'}ms`);
     if(R.free)lines.push(`フリー歌唱: ${R.free.notes}音 平均ずれ${Math.round(R.free.mae)}セント 傾向${Math.round(R.free.bias)} ±25以内${R.free.within}%`);
     const txt=lines.join('\n');
     const fallback=()=>{$('#cp').innerHTML='<textarea readonly></textarea><p class="sub">上の文字を長押しでコピーしてください。</p>';$('#cp textarea').value=txt};
