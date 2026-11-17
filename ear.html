@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111418">
+<title>相対音感トレーナー</title>
+<style>
+:root{--bg:#111418;--card:#1b2026;--fg:#e8eaed;--sub:#9aa3ad;--acc:#4fc3f7;--ok:#66bb6a;--warn:#ffb74d;--bad:#ef5350}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{margin:0 auto;max-width:560px;background:var(--bg);color:var(--fg);font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.55;
+  padding:calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 14px) calc(env(safe-area-inset-bottom) + 28px) calc(env(safe-area-inset-left) + 14px)}
+h1{font-size:21px;margin:6px 0 4px} h2{font-size:18px;margin:2px 0 8px} h3{font-size:15px;margin:14px 0 4px} p{margin:6px 0}
+a.hub,.back{color:var(--acc);text-decoration:none;font-size:14px;background:none;width:auto;padding:6px 0;margin:0}
+.card{background:var(--card);border-radius:12px;padding:14px;margin:10px 0}
+button{font:inherit;color:var(--fg);background:#2a313a;border:0;border-radius:10px;padding:12px 10px;width:100%;margin:5px 0;touch-action:manipulation;cursor:pointer}
+button.primary{background:var(--acc);color:#04222e;font-weight:700}
+button:disabled{opacity:.45}
+button.right{background:#2e6b34;color:#fff}button.wrong{background:#8c2f2c;color:#fff}
+.sub{color:var(--sub);font-size:13px}
+.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
+.grid{display:grid;gap:6px}.grid button{margin:0;padding:14px 4px}
+.warn{color:var(--warn)}.ok{color:var(--ok)}.bad{color:var(--bad)}
+table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 3px;border-bottom:1px solid #2a313a}
+select{width:100%;font:inherit;padding:9px;background:#2a313a;color:var(--fg);border:0;border-radius:8px}
+label{display:block;margin:8px 0 3px;font-size:13px;color:var(--sub)}
+.big{font-size:44px;font-weight:700;text-align:center;line-height:1.2}
+.fb{min-height:54px;text-align:center;font-size:17px;padding:6px 0}
+.slots{display:flex;gap:6px;justify-content:center;margin:10px 0}
+.slot{min-width:46px;height:46px;border-radius:10px;background:#0b0e11;border:1px solid #2a313a;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700}
+.slot.right{border-color:var(--ok);color:var(--ok)}.slot.wrong{border-color:var(--bad);color:var(--bad)}
+.bar{height:8px;background:#0b0e11;border-radius:4px;overflow:hidden}.bar div{height:100%;background:var(--acc)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+"use strict";
+const $=s=>document.querySelector(s),app=$('#app');
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* ===== 記録 ===== */
+const KEY='earTrainer.v1';
+let DB=(()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return {}}})();
+DB.lv=Object.assign({iv:0,deg:0,mel:0,chord:0},DB.lv||{});
+DB.set=Object.assign({dir:'up',keyMode:'rand'},DB.set||{});
+DB.stat=DB.stat||{};DB.hist=DB.hist||[];
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}};
+const st=(mode,k)=>((DB.stat[mode]=DB.stat[mode]||{})[k]=DB.stat[mode][k]||{n:0,c:0});
+function record(mode,k,ok){const s=st(mode,k);s.n++;if(ok)s.c++}
+// 間違いが多い項目ほど出やすくする
+function weighted(mode,keys){const w=keys.map(k=>{const s=st(mode,k);return 1+3*(1-(s.c+1)/(s.n+2))});let r=Math.random()*w.reduce((a,b)=>a+b,0);for(let i=0;i<keys.length;i++){r-=w[i];if(r<=0)return keys[i]}return keys[keys.length-1]}
+
+/* ===== 音 ===== */
+let ctx=null,wave=null,live=[];
+async function audio(){
+  if(!ctx){try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
+    ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const h=[1,.62,.36,.22,.13,.08,.05,.03],re=new Float32Array(h.length+1),im=new Float32Array(h.length+1);h.forEach((a,i)=>im[i+1]=a);wave=ctx.createPeriodicWave(re,im)}
+  if(ctx.state!=='running')try{await ctx.resume()}catch(e){}
+}
+const m2f=m=>440*Math.pow(2,(m-69)/12);
+function tone(m,t,dur,vol){
+  const o=ctx.createOscillator(),g=ctx.createGain(),v=(vol||0.22)*Math.min(1,Math.pow(261/m2f(m),0.25));
+  o.setPeriodicWave(wave);o.frequency.value=m2f(m);
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+0.008);g.gain.exponentialRampToValueAtTime(v*0.3,t+dur);g.gain.linearRampToValueAtTime(0,t+dur+0.09);
+  o.connect(g).connect(ctx.destination);o.start(t);o.stop(t+dur+0.12);live.push(o);
+}
+function stopAll(){for(const o of live)try{o.stop()}catch(e){}live=[]}
+// events: [{n:[midi...], d:秒, gap:後ろの間}]。戻り値は全体の長さ
+function playSeq(ev){stopAll();let t=ctx.currentTime+0.06;const t0=t;for(const e of ev){for(const m of e.n)tone(m,t,e.d,e.n.length>1?0.15:0.24);t+=e.d+(e.gap||0)}return t-t0}
+const cadence=k=>[{n:[k-12,k,k+4,k+7],d:0.42},{n:[k-7,k,k+5,k+9],d:0.42},{n:[k-5,k-1,k+2,k+7],d:0.42},{n:[k-12,k,k+4,k+7],d:0.7,gap:0.4}];
+
+/* ===== 共通クイズ画面 ===== */
+let view=0;
+function hdr(t){return `<button class="back" id="bk">‹ 相対音感トレーナー</button><h2>${t}</h2>`}
+function quiz(cfg){
+  const my=++view,N=cfg.N||10,log=[];let i=0,q=null,locked=false;
+  app.innerHTML=hdr(cfg.title)+`<p class="sub">${cfg.help}</p>
+    <div class="card"><div class="sub" id="pg"></div><div class="bar"><div id="pb" style="width:0"></div></div>
+    <div id="rep" class="row" style="margin-top:8px"></div><div class="fb" id="fb"></div>
+    <div class="grid" id="ans" style="grid-template-columns:repeat(${cfg.cols||3},1fr)"></div><div id="after"></div></div>`;
+  $('#bk').onclick=()=>{stopAll();home()};
+  async function next(){
+    if(my!==view)return;
+    if(i>=N){finish();return}
+    q=cfg.make();window.Q=q;locked=false;
+    $('#pg').textContent=`${i+1} / ${N}問`;$('#pb').style.width=(i/N*100)+'%';$('#fb').innerHTML='<span class="sub">聞いて、答えを選んでください</span>';$('#after').innerHTML='';
+    $('#rep').innerHTML=q.replays.map((r,k)=>`<button data-r="${k}">${r[0]}</button>`).join('');
+    document.querySelectorAll('[data-r]').forEach(b=>b.onclick=async()=>{await audio();playSeq(q.replays[+b.dataset.r][1]())});
+    $('#ans').innerHTML=q.answers.map(([id,lab])=>`<button data-a="${id}">${lab}</button>`).join('');
+    document.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>answer(b.dataset.a));
+    await audio();if(my===view)playSeq(q.replays[0][1]());
+  }
+  function answer(id){
+    if(locked)return;locked=true;
+    const ok=String(id)===String(q.correct);record(cfg.mode,q.key,ok);save();log.push({key:q.key,label:q.label,ok});i++;
+    document.querySelectorAll('[data-a]').forEach(b=>{b.disabled=true;if(String(b.dataset.a)===String(q.correct))b.classList.add('right');else if(b.dataset.a===String(id))b.classList.add('wrong')});
+    if(ok){$('#fb').innerHTML=`<b class="ok">正解！</b> ${q.label}`;setTimeout(()=>{if(my===view)next()},900)}
+    else{
+      const al=q.answers.find(a=>String(a[0])===String(id))[1];
+      $('#fb').innerHTML=`<b class="bad">不正解</b> 正解は <b>${q.label}</b>`;
+      $('#after').innerHTML=`<div class="row"><button id="h1">正解（${q.label}）を聞く</button>${q.hear?`<button id="h2">選んだ答え（${al}）を聞く</button>`:''}</div><button class="primary" id="nx">次へ</button>`;
+      $('#h1').onclick=()=>playSeq(q.replays[0][1]());
+      if(q.hear)$('#h2').onclick=()=>playSeq(q.hear(id));
+      $('#nx').onclick=next;
+    }
+  }
+  function finish(){stopAll();result(cfg,log.filter(l=>l.ok).length,log.length,log)}
+  next();
+}
+function result(cfg,c,n,log){
+  const pct=Math.round(100*c/n),lv=DB.lv[cfg.mode],max=cfg.levels-1;
+  DB.hist.push({date:Date.now(),mode:cfg.mode,lv,pct});if(DB.hist.length>200)DB.hist.shift();save();
+  const by={};for(const l of log){(by[l.label]=by[l.label]||{n:0,c:0}).n++;if(l.ok)by[l.label].c++}
+  const up=pct>=90&&lv<max;
+  app.innerHTML=hdr(cfg.title+' 結果')+`<div class="card"><div class="big">${pct}%</div><p class="sub" style="text-align:center">${c} / ${n} 正解・レベル ${lv+1}</p>
+    <table>${Object.entries(by).map(([k,v])=>`<tr><td>${k}</td><td class="${v.c===v.n?'ok':v.c/v.n>=0.5?'warn':'bad'}">${v.c} / ${v.n}</td></tr>`).join('')}</table></div>
+    <p class="sub">${up?'90%以上です。次のレベルに進めます。':pct>=90?'最高レベルで90%以上です。':pct>=70?'あと少しです。90%を超えたら次のレベルへ進みましょう。':'間違えた項目は次回から多めに出題されます。「正解を聞く」と「選んだ答えを聞く」を聞き比べると違いが覚えやすくなります。'}</p>
+    ${up?'<button class="primary" id="up">次のレベルへ</button>':''}<button class="${up?'':'primary'}" id="ag">もう一度</button><button id="hm">メニューへ</button>`;
+  $('#bk').onclick=home;$('#hm').onclick=home;$('#ag').onclick=()=>cfg.start();
+  if(up)$('#up').onclick=()=>{DB.lv[cfg.mode]++;save();cfg.start()};
+}
+
+/* ===== ① 音程当て ===== */
+const IVN=['','短2度','長2度','短3度','長3度','完全4度','増4度','完全5度','短6度','長6度','短7度','長7度','オクターブ'];
+const IVL=[[4,7,12],[2,4,5,7,12],[2,3,4,5,7,9,12],[1,2,3,4,5,7,8,9,10,12],[1,2,3,4,5,6,7,8,9,10,11,12]];
+function startIv(){
+  const set=IVL[DB.lv.iv],dir=DB.set.dir;
+  const seq=(root,iv,d)=>d==='harm'?[{n:[root,root+iv],d:1.3}]:d==='down'?[{n:[root+iv],d:0.7,gap:0.05},{n:[root],d:1.0}]:[{n:[root],d:0.7,gap:0.05},{n:[root+iv],d:1.0}];
+  quiz({mode:'iv',title:'音程当て',levels:IVL.length,start:startIv,cols:set.length>6?3:2,
+    help:'2つの音の距離（音程）を答えます。基準の高さは毎回変わります。',
+    make(){const iv=+weighted('iv',set.map(String)),root=48+Math.floor(Math.random()*(20-Math.max(0,iv-8))),d=dir==='mix'?pick(['up','down','harm']):dir;
+      return {key:String(iv),label:IVN[iv],correct:iv,answers:set.map(v=>[v,IVN[v]]),replays:[['▶ もう一度聞く',()=>seq(root,iv,d)],['ゆっくり・上行で',()=>[{n:[root],d:1.1,gap:0.1},{n:[root+iv],d:1.3}]]],hear:id=>seq(root,+id,d)}}});
+}
+
+/* ===== ② 音階の中の位置当て ===== */
+const DEG=['ド','レ♭','レ','ミ♭','ミ','ファ','ファ♯','ソ','ラ♭','ラ','シ♭','シ'];
+const DGL=[[0,4,7],[0,2,4,5,7],[0,2,4,5,7,9,11],[0,2,4,5,7,9,11],[0,1,2,3,4,5,6,7,8,9,10,11]];
+const newKey=()=>DB.set.keyMode==='fix'?48:48+Math.floor(Math.random()*12);
+function startDeg(){
+  const lv=DB.lv.deg,set=DGL[lv],wide=lv>=3;
+  quiz({mode:'deg',title:'音階の中の位置当て',levels:DGL.length,start:startDeg,cols:set.length>7?4:set.length>5?4:3,
+    help:'最初に和音の進行でキー（調）を示します。その後に鳴る1音が、そのキーの「ドレミ」のどれかを答えます（移動ド）。キーは'+(DB.set.keyMode==='fix'?'ハ長調に固定です。':'毎回変わります。'),
+    make(){const k=newKey(),d=+weighted('deg',set.map(String)),oct=wide?pick([-12,0,0,12]):(d===0&&Math.random()<0.3?12:0),m=k+d+oct;
+      return {key:String(d),label:DEG[d],correct:d,answers:set.map(v=>[v,DEG[v]]),
+        replays:[['▶ 最初から聞く',()=>[...cadence(k),{n:[m],d:1.2}]],['音だけ聞く',()=>[{n:[m],d:1.2}]],['ドと比べる',()=>[{n:[k],d:0.8,gap:0.1},{n:[m],d:1.2}]]],
+        hear:id=>[...cadence(k),{n:[k+ +id+oct],d:1.2}]}}});
+}
+
+/* ===== ④ コードの種類 ===== */
+const CH={maj:['メジャー',[0,4,7]],min:['マイナー',[0,3,7]],dim:['ディミニッシュ',[0,3,6]],aug:['オーギュメント',[0,4,8]],sus4:['サスフォー',[0,5,7]],dom7:['セブンス',[0,4,7,10]],maj7:['メジャーセブンス',[0,4,7,11]],m7:['マイナーセブンス',[0,3,7,10]]};
+const CHL=[['maj','min'],['maj','min','dim','aug'],['maj','min','sus4','dom7'],['maj','min','dom7','maj7','m7'],Object.keys(CH)];
+function startChord(){
+  const set=CHL[DB.lv.chord];
+  quiz({mode:'chord',title:'コードの種類',levels:CHL.length,start:startChord,cols:2,
+    help:'和音を聞いて、種類を答えます。明るい・暗いなどの響きの違いに注目します。',
+    make(){const c=weighted('chord',set),r=48+Math.floor(Math.random()*12),ns=id=>CH[id][1].map(x=>r+x);
+      return {key:c,label:CH[c][0],correct:c,answers:set.map(v=>[v,CH[v][0]]),
+        replays:[['▶ もう一度聞く',()=>[{n:ns(c),d:1.6}]],['1音ずつ聞く',()=>[...ns(c).map(m=>({n:[m],d:0.45})),{n:ns(c),d:1.4}]]],hear:id=>[{n:ns(id),d:1.6}]}}});
+}
+
+/* ===== ③ メロディ聞き取り ===== */
+const MLL=[{n:3,set:[0,2,4],leap:1},{n:3,set:[0,2,4,5,7],leap:1},{n:4,set:[0,2,4,5,7,9,11,12],leap:2},{n:5,set:[0,2,4,5,7,9,11,12],leap:2},{n:5,set:[0,2,4,5,7,9,11,12],leap:4}];
+function makeMel(L){const s=L.set;let i=pick([0,0,Math.min(2,s.length-1),s.indexOf(7)>=0?s.indexOf(7):0]);const out=[s[i]];
+  while(out.length<L.n){let j;do{j=i+pick([-1,1])*(1+Math.floor(Math.random()*L.leap))}while(j<0||j>=s.length);i=j;out.push(s[i])}return out}
+function startMel(){
+  const my=++view,L=MLL[DB.lv.mel],N=8,cfg={mode:'mel',title:'メロディ聞き取り',levels:MLL.length,start:startMel};
+  const names=L.set.map(d=>[d,d===12?'ド↑':DEG[d]]),log=[];let i=0,k,mel,ans,done;
+  app.innerHTML=hdr(cfg.title)+`<p class="sub">キーを示した後に、${L.n}音の短いメロディが流れます。聞こえた順に「ドレミ」を選んでください。全部正しく並べられたら正解です。</p>
+    <div class="card"><div class="sub" id="pg"></div><div class="bar"><div id="pb" style="width:0"></div></div>
+    <div class="row" style="margin-top:8px"><button id="r1">▶ 最初から聞く</button><button id="r2">メロディだけ聞く</button></div>
+    <div class="slots" id="sl"></div><div class="fb" id="fb"></div>
+    <div class="grid" id="ans" style="grid-template-columns:repeat(4,1fr)"></div>
+    <div class="row"><button id="del">1つ消す</button><button class="primary" id="nx" style="display:none">次へ</button></div></div>`;
+  $('#bk').onclick=()=>{stopAll();home()};
+  const seq=(withCad)=>[...(withCad?cadence(k):[]),...mel.map(d=>({n:[k+d],d:0.5,gap:0.03}))];
+  const slots=(chk)=>{$('#sl').innerHTML=mel.map((d,j)=>`<div class="slot${chk&&ans[j]!=null?(ans[j]===d?' right':' wrong'):''}">${ans[j]!=null?names.find(x=>x[0]===ans[j])[1]:''}</div>`).join('')};
+  $('#ans').innerHTML=names.map(([d,l])=>`<button data-d="${d}">${l}</button>`).join('');
+  document.querySelectorAll('[data-d]').forEach(b=>b.onclick=async()=>{
+    if(done||ans.length>=mel.length)return;await audio();ans.push(+b.dataset.d);playSeq([{n:[k+ +b.dataset.d],d:0.35}]);slots();
+    if(ans.length===mel.length)check()});
+  $('#del').onclick=()=>{if(!done){ans.pop();slots()}};
+  $('#r1').onclick=async()=>{await audio();playSeq(seq(true))};$('#r2').onclick=async()=>{await audio();playSeq(seq(false))};
+  $('#nx').onclick=()=>next();
+  function check(){
+    done=true;const ok=mel.every((d,j)=>ans[j]===d);
+    mel.forEach((d,j)=>{if(j)record('mel',(d>mel[j-1]?'↑':'↓')+Math.abs(d-mel[j-1]),ans[j]===d)});save();
+    log.push({label:`${L.n}音のメロディ`,ok});i++;slots(true);
+    $('#fb').innerHTML=ok?'<b class="ok">正解！</b>':`<b class="bad">不正解</b> 正解は <b>${mel.map(d=>names.find(x=>x[0]===d)[1]).join(' ')}</b>`;
+    if(ok)setTimeout(()=>{if(my===view)next()},1000);else $('#nx').style.display='';
+  }
+  async function next(){
+    if(my!==view)return;
+    if(i>=N){stopAll();result(cfg,log.filter(l=>l.ok).length,N,log);return}
+    k=newKey();mel=makeMel(L);ans=[];done=false;window.Q={mel,correct:mel};
+    $('#pg').textContent=`${i+1} / ${N}問`;$('#pb').style.width=(i/N*100)+'%';$('#fb').innerHTML='<span class="sub">聞こえた順に選んでください</span>';$('#nx').style.display='none';slots();
+    await audio();if(my===view)playSeq(seq(true));
+  }
+  next();
+}
+
+/* ===== メニュー ===== */
+function acc(mode){const s=DB.stat[mode]||{};let n=0,c=0;for(const k in s){n+=s[k].n;c+=s[k].c}return n?`正解率 ${Math.round(100*c/n)}%（${n}問）`:'未実施'}
+function weak(mode,name){const s=DB.stat[mode]||{},a=Object.entries(s).filter(([,v])=>v.n>=4).map(([k,v])=>[name(k),v.c/v.n]).sort((x,y)=>x[1]-y[1]).slice(0,3).filter(x=>x[1]<0.8);
+  return a.length?`苦手: ${a.map(x=>`${x[0]}（${Math.round(x[1]*100)}%）`).join('、')}`:''}
+function home(){
+  view++;stopAll();
+  const sel=(id,n,cur,lab)=>`<select id="${id}">${Array.from({length:n},(_,i)=>`<option value="${i}"${i===cur?' selected':''}>レベル ${i+1}：${lab(i)}</option>`).join('')}</select>`;
+  const card=(id,title,desc,lvsel,mode,wk,extra)=>`<div class="card"><b>${title}</b><p class="sub">${desc}</p>${lvsel}${extra||''}
+    <p class="sub">${acc(mode)}${wk?'<br>'+wk:''}</p><button class="primary" id="${id}">はじめる</button></div>`;
+  app.innerHTML=`<a class="hub" href="./">‹ メニュー</a><h1>相対音感トレーナー</h1>
+  <p class="sub">音を「基準からの距離」で聞き取る力を鍛えます。マイクは使わないので、Bluetoothイヤホンでもそのまま使えます。1回10問、1〜2分です。</p>
+  ${card('gDeg','② 音階の中の位置当て（おすすめ）','キーを聞いた後の1音が、ドレミのどれかを答えます。曲の中での聞こえ方に近く、歌い出しの音を頭の中で鳴らす力につながります。',
+    sel('lDeg',DGL.length,DB.lv.deg,i=>['ド・ミ・ソ','ド〜ソ','ドレミファソラシ','1オクターブ上下も','半音も含む12音'][i]),'deg',weak('deg',k=>DEG[+k]),
+    `<label>キー</label><select id="km"><option value="rand"${DB.set.keyMode==='rand'?' selected':''}>毎回変える</option><option value="fix"${DB.set.keyMode==='fix'?' selected':''}>ハ長調に固定（やさしい）</option></select>`)}
+  ${card('gIv','① 音程当て','2つの音の距離（長3度、完全5度など）を答えます。',
+    sel('lIv',IVL.length,DB.lv.iv,i=>['長3度・完全5度・オクターブ','＋長2度・完全4度','＋短3度・長6度','10種類','全12種類'][i]),'iv',weak('iv',k=>IVN[+k]),
+    `<label>鳴らし方</label><select id="dir">${[['up','下の音 → 上の音'],['down','上の音 → 下の音'],['harm','同時に鳴らす'],['mix','ミックス']].map(([v,l])=>`<option value="${v}"${DB.set.dir===v?' selected':''}>${l}</option>`).join('')}</select>`)}
+  ${card('gMel','③ メロディ聞き取り','短いメロディを聞いて、ドレミで並べます。耳コピの基礎練習です。',
+    sel('lMel',MLL.length,DB.lv.mel,i=>['3音（ドレミ）','3音（ド〜ソ）','4音（1オクターブ）','5音','5音（跳躍あり）'][i]),'mel',weak('mel',k=>k[0]+(IVN[+k.slice(1)]||k.slice(1))))}
+  ${card('gCh','④ コードの種類','和音の響き（メジャー・マイナーなど）を聞き分けます。',
+    sel('lCh',CHL.length,DB.lv.chord,i=>['メジャー・マイナー','＋ディミニッシュ・オーギュメント','＋サスフォー・セブンス','セブンス系3種','全8種類'][i]),'chord',weak('chord',k=>CH[k][0]))}
+  <div class="card sub"><b>進め方の目安</b><br>②をレベル1から始め、90%を超えたら次のレベルへ。毎日1〜2セットの短い練習を続けるのが効果的です。音が出ないときは、iPhone側面の消音スイッチを確認してください。<br><button id="reset" style="margin-top:8px">記録を消去</button><span id="rs"></span></div>`;
+  const b=(id,lid,mode,fn)=>{$('#'+lid).onchange=()=>{DB.lv[mode]=+$('#'+lid).value;save()};$('#'+id).onclick=async()=>{await audio();fn()}};
+  b('gDeg','lDeg','deg',startDeg);b('gIv','lIv','iv',startIv);b('gMel','lMel','mel',startMel);b('gCh','lCh','chord',startChord);
+  $('#km').onchange=()=>{DB.set.keyMode=$('#km').value;save()};$('#dir').onchange=()=>{DB.set.dir=$('#dir').value;save()};
+  let armed=false;$('#reset').onclick=()=>{if(!armed){armed=true;$('#rs').innerHTML=' <span class="warn">もう一度押すと消去します</span>';return}DB.stat={};DB.hist=[];save();home()};
+  window.scrollTo(0,0);
+}
+home();
+</script>
+</body>
+</html>
