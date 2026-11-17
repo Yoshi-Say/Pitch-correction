@@ -32,11 +32,15 @@ ul{margin:4px 0;padding-left:20px} li{margin:3px 0}
 #bar{display:flex;align-items:center;gap:8px;padding:4px 8px;font-size:13px;color:var(--sub)}
 #bar b{color:var(--fg)} #quit{width:auto;margin:0;padding:6px 12px;font-size:13px}
 #hw{flex:1;min-height:0;width:100%;display:block}
-#pads{position:relative;height:min(44vh,340px);background:#14181d;border-top:1px solid #2a313a}
-.pad{position:absolute;border-radius:50%;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#0b0e11;
-  box-shadow:inset 0 0 0 3px rgba(255,255,255,.25),0 3px 8px rgba(0,0,0,.5);touch-action:none}
-.pad.hit{filter:brightness(1.6);transform:translate(-50%,-50%) scale(.94)}
-.pad.off{opacity:.25}
+#pads{position:relative;height:min(44vh,340px);border-top:1px solid #2a313a;background:radial-gradient(ellipse at 50% 55%,#3a2a1e 0%,#241a13 55%,#120d0a 100%)}
+.pad{position:absolute;border-radius:50%;transform:translate(-50%,-50%);touch-action:none;transition:transform .05s}
+.pad svg{display:block;pointer-events:none}
+.pad .pl{position:absolute;left:50%;bottom:-3px;transform:translateX(-50%);font-size:9.5px;font-weight:700;white-space:nowrap;padding:0 5px;border-radius:7px;background:rgba(0,0,0,.6);pointer-events:none}
+.pad.hit{transform:translate(-50%,-50%) scale(.95)} .pad.hit svg{filter:brightness(1.35)}
+.pad.off{opacity:.3}
+.tap{height:180px;border-radius:16px;background:#263040;display:flex;align-items:center;justify-content:center;font-size:20px;user-select:none;-webkit-user-select:none;touch-action:none;margin:10px 0}
+.tap.flash{background:#3d5a80}
+a.hub{color:var(--acc);text-decoration:none;font-size:14px}
 </style>
 </head>
 <body>
@@ -66,7 +70,7 @@ const INFO={
 /* ===== 設定・記録 ===== */
 const KEY='drumTrainer.v1';
 let DB=(()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return {}}})();
-DB.set=Object.assign({level:0,tempo:100,bars:8,judge:'normal',speed:1,click:true,off:null},DB.set||{});
+DB.set=Object.assign({level:0,tempo:100,bars:8,judge:'normal',speed:1,click:true,off:null,snd:'tap'},DB.set||{});
 DB.best=DB.best||{};DB.hist=DB.hist||[];
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}};
 const WIN={easy:[40,75,120],normal:[25,50,90],hard:[15,30,60]};
@@ -82,22 +86,32 @@ function biquad(x,type,f,q,sr){
 }
 function norm(x,g){let m=0;for(const v of x)if(Math.abs(v)>m)m=Math.abs(v);for(let i=0;i<x.length;i++)x[i]=x[i]/m*g;return x}
 function synth(sr){
-  const A=(sec)=>new Float32Array(Math.floor(sec*sr)),rnd=()=>Math.random()*2-1,TAU=2*Math.PI;
-  const metal=(x,scale)=>{const fs=[205.3,304.4,369.6,522.7,540,800].map(f=>f*scale);for(let i=0;i<x.length;i++){const t=i/sr;let v=0;for(const f of fs)v+=Math.sin(TAU*f*t)>0?1:-1;x[i]=v/6}return x};
-  const drum=(sec,f0,f1,sweep,dec,noise)=>{const x=A(sec);let ph=0;for(let i=0;i<x.length;i++){const t=i/sr,f=f1+(f0-f1)*Math.exp(-t/sweep);ph+=TAU*f/sr;x[i]=Math.sin(ph)*Math.exp(-t/dec)+(t<0.006?rnd()*noise*(1-t/0.006):0)}return x};
+  const A=(sec)=>new Float32Array(Math.floor(sec*sr)),TAU=2*Math.PI;
+  let seed=12345;const rnd=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/2147483648-1};
+  const sat=(x,d)=>{for(let i=0;i<x.length;i++)x[i]=Math.tanh(x[i]*d);return x};
+  // 金物：たくさんの不協和な倍音を重ね、高い倍音ほど早く消える
+  const cym=(sec,n,f0,f1,dec,tilt,noise,nDec)=>{const x=A(sec),nz=A(sec);
+    for(let p=0;p<n;p++){const f=f0*Math.pow(f1/f0,(p+0.5*(rnd()+1))/n),a=Math.pow(f0/f,tilt)*(0.6+0.4*rnd()),d=dec*Math.pow(f0/f,0.55)*(0.8+0.3*rnd()),ph=rnd()*3,w=TAU*f/sr,len=Math.min(x.length,Math.floor(d*7*sr));
+      for(let i=0;i<len;i++)x[i]+=a*Math.sin(w*i+ph)*Math.exp(-i/(d*sr))}
+    for(let i=0;i<nz.length;i++)nz[i]=rnd()*Math.exp(-i/(nDec*sr));
+    biquad(nz,'hp',5000,0.7,sr);let m=0;for(const v of x)if(Math.abs(v)>m)m=Math.abs(v);
+    for(let i=0;i<x.length;i++)x[i]=x[i]/m+nz[i]*noise;return x};
+  const drum=(sec,f,bend,bt,dec,o2,o2d,nz,nzf)=>{const x=A(sec),n=A(sec);let ph=0,ph2=0;
+    for(let i=0;i<x.length;i++){const t=i/sr,ff=f*(1+bend*Math.exp(-t/bt));ph+=TAU*ff/sr;ph2+=TAU*ff*1.59/sr;
+      x[i]=Math.sin(ph)*Math.exp(-t/dec)+o2*Math.sin(ph2)*Math.exp(-t/o2d);n[i]=rnd()*Math.exp(-t/0.012)}
+    biquad(n,'lp',nzf,0.7,sr);for(let i=0;i<x.length;i++)x[i]+=n[i]*nz;return x};
   const out={};
-  out.BD=norm(biquad(drum(0.5,160,48,0.035,0.16,0.7),'lp',2500,0.7,sr),0.95);
-  { const x=A(0.3),nz=A(0.3);for(let i=0;i<x.length;i++){const t=i/sr;nz[i]=rnd()*Math.exp(-t/0.075);x[i]=(Math.sin(TAU*185*t)+0.6*Math.sin(TAU*330*t))*Math.exp(-t/0.05)}
-    biquad(nz,'hp',1800,0.7,sr);for(let i=0;i<x.length;i++)x[i]=x[i]*0.6+nz[i];out.SN=norm(x,0.85)}
-  { const x=metal(A(0.12),40/5.4*5.4);const nz=A(0.12);for(let i=0;i<x.length;i++){nz[i]=rnd()}
-    for(let i=0;i<x.length;i++)x[i]=(x[i]+nz[i]*0.5)*Math.exp(-(i/sr)/0.028);out.HH=norm(biquad(biquad(x,'hp',7500,0.8,sr),'hp',7500,0.8,sr),0.5)}
-  { const x=metal(A(1.6),1.35);for(let i=0;i<x.length;i++){const t=i/sr;x[i]=(x[i]*0.6+rnd())*(0.7*Math.exp(-t/0.12)+0.3*Math.exp(-t/0.55))}
-    out.CR=norm(biquad(x,'hp',3500,0.7,sr),0.6)}
-  { const x=metal(A(1.1),1.9);for(let i=0;i<x.length;i++){const t=i/sr;x[i]=(x[i]+rnd()*0.25)*(0.6*Math.exp(-t/0.05)+0.4*Math.exp(-t/0.4))+0.25*Math.sin(TAU*3100*t)*Math.exp(-t/0.15)}
-    out.RD=norm(biquad(x,'hp',5000,0.8,sr),0.45)}
-  out.HT=norm(drum(0.4,290,195,0.05,0.14,0.5),0.8);
-  out.LT=norm(drum(0.45,215,145,0.05,0.17,0.5),0.8);
-  out.FT=norm(drum(0.6,150,98,0.06,0.22,0.5),0.85);
+  out.BD=norm(sat(drum(0.6,48,1.9,0.016,0.2,0.0,0.05,0.9,3500),1.6),0.95);
+  { const x=drum(0.35,190,0.25,0.02,0.07,0.55,0.05,0.4,6000),w=A(0.35);
+    for(let i=0;i<w.length;i++){const t=i/sr;w[i]=rnd()*(0.75*Math.exp(-t/0.055)+0.25*Math.exp(-t/0.14))}
+    biquad(biquad(w,'hp',1700,0.7,sr),'lp',9500,0.7,sr);for(let i=0;i<x.length;i++)x[i]=x[i]*0.75+w[i]*1.5;out.SN=norm(sat(x,1.3),0.85)}
+  out.HH=norm(biquad(cym(0.16,34,3200,14000,0.022,0.25,0.9,0.02),'hp',6000,0.8,sr),0.42);
+  out.CR=norm(biquad(cym(2.2,70,340,13000,0.75,0.35,0.9,0.09),'hp',700,0.7,sr),0.62);
+  { const x=cym(1.8,50,420,11000,0.6,0.6,0.25,0.02);for(let i=0;i<x.length;i++){const t=i/sr;x[i]+=0.5*Math.sin(TAU*2950*t)*Math.exp(-t/0.25)+0.35*Math.sin(TAU*4410*t)*Math.exp(-t/0.12)}
+    out.RD=norm(biquad(x,'hp',900,0.7,sr),0.5)}
+  out.HT=norm(sat(drum(0.55,205,0.35,0.025,0.19,0.3,0.06,0.5,4500),1.2),0.82);
+  out.LT=norm(sat(drum(0.65,152,0.35,0.028,0.24,0.3,0.07,0.5,4000),1.2),0.84);
+  out.FT=norm(sat(drum(0.85,104,0.4,0.03,0.33,0.3,0.08,0.5,3500),1.2),0.88);
   const ck=(f)=>{const x=A(0.04);for(let i=0;i<x.length;i++){const t=i/sr;x[i]=Math.sin(TAU*f*t)*Math.exp(-t/0.008)}return norm(x,0.5)};
   out.CK1=ck(1900);out.CK2=ck(1300);
   return out;
@@ -166,6 +180,35 @@ function buildChart(li,bars,tempoPct){
   return {bpm,spb,notes,used,beats:bars*4+(L.crash?1:0)};
 }
 
+/* ===== ドラムの見た目 ===== */
+function padSVG(ln){
+  const u='p'+ln,lug=n=>Array.from({length:n},(_,i)=>`<rect x="46.6" y="0.6" width="6.8" height="7.6" rx="1.6" fill="url(#${u}c)" stroke="#4a4a4a" stroke-width=".5" transform="rotate(${i*360/n} 50 50)"/>`).join('');
+  const defs=`<linearGradient id="${u}c" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fafafa"/><stop offset=".35" stop-color="#9a9a9a"/><stop offset=".6" stop-color="#e8e8e8"/><stop offset="1" stop-color="#6e6e6e"/></linearGradient>
+    <radialGradient id="${u}h" cx="42%" cy="38%" r="70%"><stop offset="0" stop-color="#fdfcf7"/><stop offset=".7" stop-color="#e6e1d3"/><stop offset="1" stop-color="#bdb6a3"/></radialGradient>
+    <radialGradient id="${u}b" cx="38%" cy="32%" r="80%"><stop offset="0" stop-color="#fff4c9"/><stop offset=".3" stop-color="#e6c468"/><stop offset=".75" stop-color="#b48d38"/><stop offset="1" stop-color="#77591b"/></radialGradient>`;
+  let body;
+  if(ln==='CR'||ln==='RD'||ln==='HH'){
+    const bell=ln==='RD'?15:ln==='HH'?9:11,gr=[45,41,37,33,29,25,21].map(r=>`<circle cx="50" cy="50" r="${r}" fill="none" stroke="rgba(60,40,0,.16)" stroke-width=".7"/>`).join('');
+    body=`<circle cx="50" cy="52" r="48" fill="rgba(0,0,0,.35)"/><circle cx="50" cy="50" r="48" fill="url(#${u}b)" stroke="#5a4312" stroke-width=".8"/>${gr}
+      <path d="M50 50 L14 18 A48 48 0 0 1 40 3 Z" fill="rgba(255,255,255,.30)"/><path d="M50 50 L86 82 A48 48 0 0 1 60 97 Z" fill="rgba(255,255,255,.14)"/>
+      <circle cx="50" cy="50" r="${bell}" fill="url(#${u}b)" stroke="rgba(60,40,0,.35)" stroke-width=".8"/>
+      ${ln==='HH'?'<circle cx="50" cy="50" r="46.5" fill="none" stroke="rgba(60,40,0,.3)" stroke-width="1.2"/>':''}
+      <circle cx="50" cy="50" r="3.4" fill="url(#'+u+'c)" stroke="#333" stroke-width=".6"/>`.replace("'+u+'",u);
+  }else if(ln==='BD'){
+    body=`<circle cx="50" cy="52" r="48" fill="rgba(0,0,0,.4)"/><circle cx="50" cy="50" r="48" fill="#161616"/><circle cx="50" cy="50" r="46" fill="none" stroke="#8a5a2b" stroke-width="3.2"/>
+      <circle cx="50" cy="50" r="43.5" fill="none" stroke="#3a2412" stroke-width=".8"/>${lug(10)}
+      <circle cx="50" cy="50" r="40" fill="url(#${u}h)"/><circle cx="50" cy="50" r="40" fill="none" stroke="rgba(0,0,0,.25)" stroke-width=".8"/>
+      <circle cx="67" cy="66" r="9" fill="#0d0d0d" stroke="url(#${u}c)" stroke-width="1.6"/><circle cx="50" cy="50" r="7" fill="rgba(0,0,0,.07)"/>`;
+  }else{
+    const shell={SN:'#8f1d1d',HT:'#143a63',LT:'#143a63',FT:'#143a63'}[ln];
+    body=`<circle cx="50" cy="52" r="48" fill="rgba(0,0,0,.4)"/><circle cx="50" cy="50" r="48" fill="${shell}"/><circle cx="50" cy="50" r="45.5" fill="url(#${u}c)"/>${lug(ln==='SN'?10:8)}
+      <circle cx="50" cy="50" r="40.5" fill="url(#${u}h)"/><circle cx="50" cy="50" r="40.5" fill="none" stroke="rgba(0,0,0,.28)" stroke-width=".8"/>
+      ${ln==='SN'?'<ellipse cx="50" cy="52" rx="15" ry="13" fill="rgba(90,70,40,.10)"/>':'<circle cx="50" cy="50" r="12" fill="rgba(0,0,0,.09)"/>'}
+      <path d="M22 30 A36 36 0 0 1 46 13" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2.4" stroke-linecap="round"/>`;
+  }
+  return `<svg viewBox="0 0 100 100" width="100%" height="100%"><defs>${defs}</defs>${body}</svg>`;
+}
+
 /* ===== ゲーム本体 ===== */
 let G=null;
 const hw=$('#hw');let hg=null,HW=0,HH_=0;
@@ -174,8 +217,9 @@ function buildPads(used){
   const el=$('#pads');el.innerHTML='';
   for(const ln of LANES){
     const I=INFO[ln],p=document.createElement('div');
-    p.className='pad'+(used.has(ln)?'':' off');p.id='pad'+ln;p.textContent=I.n;
-    p.style.cssText=`left:${I.x}%;top:${I.y}%;width:${I.d}%;aspect-ratio:1;background:${I.c}`;
+    p.className='pad'+(used.has(ln)?'':' off');p.id='pad'+ln;
+    p.innerHTML=padSVG(ln)+`<span class="pl" style="color:${I.c}">${I.n}</span>`;
+    p.style.cssText=`left:${I.x}%;top:${I.y}%;width:${I.d}%;aspect-ratio:1`;
     p.addEventListener('pointerdown',e=>{
       e.preventDefault();if(!ctx)return;
       let lag=(performance.now()-e.timeStamp)/1000;if(!(lag>=0&&lag<0.1))lag=0;
@@ -196,7 +240,8 @@ async function startGame(auto){
   G={...ch,auto,W,off:S.off/1000,t0:ctx.currentTime+0.3+4*ch.spb,srcs:[],extra:0,combo:0,maxCombo:0,cnt:{p:0,g:0,o:0,m:0},
      flash:{},msg:null,run:true,mi:0,ai:0,lastT:ch.notes[ch.notes.length-1].t};
   if(S.click||auto===false)for(let k=-4;k<ch.beats;k++){if(k>=0&&!S.click)continue;G.srcs.push(play(k<0||k%4===0?'CK1':'CK2',G.t0+k*ch.spb,k<0?1:0.7))}
-  if(auto)for(const n of ch.notes)G.srcs.push(play(n.lane,G.t0+n.t));
+  G.backing=auto||S.snd==='auto';
+  if(G.backing)for(const n of ch.notes)G.srcs.push(play(n.lane,G.t0+n.t));
   requestAnimationFrame(frame);
 }
 function stopGame(){
@@ -207,7 +252,7 @@ function stopGame(){
 function hit(lane,at){
   flashPad(lane);
   if(!G||!G.run||G.auto){play(lane);return}
-  play(lane);
+  if(!G.backing)play(lane);
   const ts=at-G.t0-G.off;let best=null,bd=1e9;
   for(let i=G.mi;i<G.notes.length;i++){
     const n=G.notes[i];if(n.t-ts>G.W[2])break;
@@ -344,7 +389,7 @@ function finish(){
 /* ===== メニュー ===== */
 function menu(){
   const S=DB.set,opt=(vals,cur,lab)=>vals.map(v=>`<option value="${v}"${String(v)===String(cur)?' selected':''}>${lab(v)}</option>`).join('');
-  $('#menu').innerHTML=`<h1>ドラム リズムトレーナー</h1>
+  $('#menu').innerHTML=`<a class="hub" href="./">‹ メニュー</a><h1>ドラム リズムトレーナー</h1>
   <p class="sub">上から流れてくるノーツが白い線に重なる瞬間に、下のドラムを叩きます。1打ごとに何ms早い・遅いかを表示し、終了後に詳しく分析します。両手の親指で叩くのがおすすめです。</p>
   <div class="card">${LEVELS.map((L,i)=>`<button class="lv${i===S.level?' sel':''}" data-lv="${i}"><b>Lv${i+1} ${L.name}</b><span>♩=${L.bpm}${DB.best[i]?`<br>最高 ${DB.best[i].score}点`:''}</span></button>`).join('')}</div>
   <button class="primary" id="go">スタート</button><button id="demo">お手本を聞く</button>
@@ -353,16 +398,47 @@ function menu(){
     <div><label>長さ</label><select id="bars">${opt([4,8,16],S.bars,v=>v+'小節')}</select></div></div>
     <div class="row"><div><label>判定の厳しさ</label><select id="judge">${opt(['easy','normal','hard'],S.judge,v=>({easy:'やさしい（±40ms）',normal:'ふつう（±25ms）',hard:'きびしい（±15ms）'})[v])}</select></div>
     <div><label>ノーツの速さ</label><select id="speed">${opt([0.7,1,1.4,1.8],S.speed,v=>({0.7:'ゆっくり',1:'ふつう',1.4:'速い',1.8:'とても速い'})[v])}</select></div></div>
+    <label>音の鳴らし方</label><select id="snd">${opt(['tap','auto'],S.snd,v=>v==='tap'?'叩いた音を鳴らす（スピーカー・有線向け）':'自動演奏に合わせて叩く（Bluetooth向け）')}</select>
     <div class="row"><div><label>クリック音</label><select id="click">${opt(['1','0'],S.click?'1':'0',v=>v==='1'?'あり':'なし（カウントのみ）')}</select></div>
     <div><label>判定補正（ms）</label><input type="number" id="off" value="${S.off??''}" placeholder="自動" inputmode="numeric"></div></div>
-    <p class="sub">判定補正は、音や画面の遅れを打ち消す値です。空欄なら自動設定。iPhoneのスピーカーや有線イヤホンなら10〜40ms、Bluetoothイヤホンは150〜300msが目安ですが、Bluetoothでは自分が叩いた音も遅れて聞こえるので、スピーカーか有線がおすすめです。結果画面の「補正に反映」でも調整できます。</p>
+    <button id="cal">遅延を測る（タップで自動調整）</button>
+    <p class="sub">Bluetoothイヤホンは音が0.15〜0.25秒ほど遅れて届きます。「自動演奏に合わせて叩く」にすると、ドラムの音は譜面どおりに自動で鳴り、叩いた音は鳴らしません（一般的な音ゲーと同じ方式）。使う前に「遅延を測る」で判定補正を合わせてください。イヤホンを替えたら測り直します。</p>
   </div>
   <div class="card sub"><b>音が出ないとき</b>：iPhone側面の消音スイッチを解除し、音量を上げてください。</div>`;
   document.querySelectorAll('.lv').forEach(b=>b.onclick=()=>{S.level=+b.dataset.lv;save();document.querySelectorAll('.lv').forEach(x=>x.classList.toggle('sel',x===b))});
-  const rd=()=>{S.tempo=+$('#tempo').value;S.bars=+$('#bars').value;S.judge=$('#judge').value;S.speed=+$('#speed').value;S.click=$('#click').value==='1';
+  const rd=()=>{S.snd=$('#snd').value;S.tempo=+$('#tempo').value;S.bars=+$('#bars').value;S.judge=$('#judge').value;S.speed=+$('#speed').value;S.click=$('#click').value==='1';
     const o=$('#off').value;S.off=o===''?null:clamp(Math.round(+o)||0,-100,500);save()};
-  ['tempo','bars','judge','speed','click','off'].forEach(id=>$('#'+id).addEventListener('change',rd));
+  ['snd','tempo','bars','judge','speed','click','off'].forEach(id=>$('#'+id).addEventListener('change',rd));
+  $('#cal').onclick=()=>{rd();calib()};
   $('#go').onclick=()=>{rd();startGame(false)};$('#demo').onclick=()=>{rd();startGame(true)};
+}
+/* ===== 遅延の測定 ===== */
+async function calib(){
+  await initAudio();
+  const BPM=90,iv=60/BPM,COUNT=4,BEATS=12;let taps=null,alive=true;
+  $('#menu').innerHTML=`<h1>遅延を測る</h1><p class="sub">いま使っているイヤホン（またはスピーカー）で聞いてください。「カッ」という音に合わせて下の枠をタップします。最初の4拍（高い音）は準備で、その後の${BEATS}拍を計測します。</p>
+    <div class="tap" id="tap">ここをタップ</div><div class="sub" id="cst" style="text-align:center"></div>
+    <button class="primary" id="cgo">スタート</button><div id="cres"></div><button id="cback">戻る</button>`;
+  const tap=$('#tap');
+  tap.addEventListener('pointerdown',e=>{e.preventDefault();if(!taps)return;let lag=(performance.now()-e.timeStamp)/1000;if(!(lag>=0&&lag<0.1))lag=0;
+    taps.push(ctx.currentTime-lag);tap.classList.add('flash');setTimeout(()=>tap.classList.remove('flash'),80)});
+  $('#cback').onclick=()=>{alive=false;menu()};
+  $('#cgo').onclick=async()=>{
+    $('#cgo').disabled=true;$('#cres').innerHTML='';
+    const t0=ctx.currentTime+0.6,beats=[];
+    for(let i=0;i<COUNT+BEATS;i++){const t=t0+i*iv;play(i<COUNT?'CK1':'CK2',t);if(i>=COUNT)beats.push(t)}
+    taps=[];
+    while(alive&&ctx.currentTime<t0+(COUNT+BEATS)*iv+0.5){const k=Math.floor((ctx.currentTime-t0)/iv);$('#cst').textContent=k<0?'準備…':k<COUNT?`準備 ${k+1}/${COUNT}`:`計測中 ${Math.min(k-COUNT+1,BEATS)}/${BEATS}`;await new Promise(r=>setTimeout(r,50))}
+    if(!alive)return;
+    const offs=[];for(const t of taps){let b=beats[0];for(const x of beats)if(Math.abs(t-x)<Math.abs(t-b))b=x;if(Math.abs(t-b)<iv/2)offs.push((t-b)*1000)}
+    taps=null;$('#cgo').disabled=false;$('#cgo').textContent='もう一度';$('#cst').textContent='';
+    if(offs.length<8){$('#cres').innerHTML='<p class="warn">タップが少なすぎました（8回以上必要）。もう一度どうぞ。</p>';return}
+    const m=Math.round(median(offs)),sd=Math.round(std(offs));
+    DB.set.off=clamp(m,-100,500);save();
+    $('#cres').innerHTML=`<div class="card"><p>判定補正を <b>${DB.set.off}ms</b> に設定しました（タップのばらつき ${sd}ms）。</p>
+      <p class="sub">${m>=100?'音の遅れが大きいので、「自動演奏に合わせて叩く」モードがおすすめです。':'遅れは小さいので、「叩いた音を鳴らす」モードで違和感なく使えるはずです。'}${sd>40?' ばらつきが大きいので、もう一度測ると確実です。':''}</p></div>`;
+    if(m>=100){DB.set.snd='auto';save()}
+  };
 }
 menu();
 </script>
