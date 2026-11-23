@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>こえのすけ STAGE - 声で進む音程トレーナー（試作）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<style>
+  :root{ --ink:#2a1f3d; --accent:#ffcf5a; --pink:#ff6f91; --text:#f6f1ff; --sub:#c9bfe6; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#120d22;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+  #wrap{position:fixed;inset:0;display:flex;flex-direction:column}
+  header{padding:8px 10px;background:linear-gradient(180deg,rgba(40,28,70,.95),rgba(26,18,48,.95));
+    border-bottom:1px solid rgba(255,255,255,.08);box-shadow:0 4px 18px rgba(0,0,0,.35);z-index:2}
+  .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .row+.row{margin-top:6px}
+  h1{font-family:"DotGothic16",monospace;font-size:17px;margin:0 6px 0 0;color:var(--accent);font-weight:normal;
+    letter-spacing:.06em;text-shadow:0 0 10px rgba(255,207,90,.55)}
+  select,button{font-family:inherit;font-size:12px;border-radius:999px;padding:5px 9px;color:var(--text);
+    background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);max-width:100%;
+    -webkit-appearance:none;appearance:none}
+  select{padding-right:12px}
+  #ex{max-width:48vw}
+  button{transition:transform .08s}
+  button:active{transform:scale(.96)}
+  button.primary{background:linear-gradient(135deg,#ffd66e,#ff9f6b);color:#2a1a10;border:none;font-weight:700;
+    box-shadow:0 0 14px rgba(255,180,100,.45)}
+  button:disabled{opacity:.4;box-shadow:none}
+  label.tg{font-size:12px;color:var(--sub);display:flex;align-items:center;gap:4px}
+  .key{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--sub)}
+  .key button{padding:3px 10px}
+  #stage{flex:1;position:relative;background:#000}
+  #stage > canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #hint{position:absolute;left:0;right:0;bottom:12px;text-align:center;font-size:14px;color:#fff;
+    pointer-events:none;text-shadow:0 0 8px rgba(0,0,0,.9)}
+  #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(10,6,24,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:16px}
+  #card{background:linear-gradient(160deg,rgba(60,40,100,.92),rgba(30,20,60,.94));color:#fff;width:min(420px,100%);
+    padding:20px 18px 16px;text-align:center;border-radius:22px;border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 40px rgba(255,111,145,.15)}
+  #card .small{font-size:12px;color:var(--sub)}
+  #card .type{font-family:"DotGothic16",monospace;font-size:26px;margin:6px 0 2px;color:var(--accent);
+    text-shadow:0 0 14px rgba(255,207,90,.6)}
+  #card .score{font-size:48px;font-weight:800;line-height:1.1}
+  #card .advice{font-size:14px;margin:12px 0;line-height:1.7;text-align:left;background:rgba(255,255,255,.07);
+    border-radius:12px;padding:10px 12px}
+  #bars{display:flex;gap:5px;align-items:flex-end;height:56px;margin:6px 0 20px}
+  #bars div{flex:1;position:relative;border-radius:6px 6px 2px 2px}
+  #bars span{position:absolute;bottom:-17px;left:0;right:0;font-size:11px;color:var(--sub)}
+  #card .btns{display:flex;gap:10px;justify-content:center}
+  #startCover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;text-align:center;padding:20px;
+    background:radial-gradient(circle at 50% 35%,#4a2f7a 0%,#24173f 55%,#120d22 100%)}
+  #startCover .title{font-family:"DotGothic16",monospace;font-size:34px;color:var(--accent);letter-spacing:.1em;
+    text-shadow:0 0 18px rgba(255,207,90,.7),0 0 40px rgba(255,111,145,.4)}
+  #startCover p{color:var(--sub);font-size:14px;line-height:1.8;margin:0}
+  #startCover button{font-size:16px;padding:12px 26px}
+  #coverChara{width:96px;height:96px;image-rendering:pixelated;filter:drop-shadow(0 0 14px rgba(255,207,150,.7))}
+  .blink{animation:bl 1.2s ease-in-out infinite}
+  @keyframes bl{50%{opacity:.3}}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <div class="row">
+      <h1>こえのすけ</h1>
+      <select id="voice">
+        <option value="48">低い声（男性）</option>
+        <option value="57">中くらい</option>
+        <option value="60">高い声（女性）</option>
+      </select>
+      <select id="ex"></select>
+    </div>
+    <div class="row">
+      <select id="level">
+        <option value="50">やさしい</option>
+        <option value="35" selected>ふつう</option>
+        <option value="20">きびしい</option>
+      </select>
+      <div class="key">キー<button id="kDown">−</button><span id="kVal">0</span><button id="kUp">＋</button></div>
+      <label class="tg"><input type="checkbox" id="guide" checked>お手本</label>
+      <label class="tg"><input type="checkbox" id="beat" checked>ビート</label>
+      <label class="tg"><input type="checkbox" id="accomp" checked>伴奏</label>
+      <label class="tg"><input type="checkbox" id="lite">軽量</label>
+      <select id="sens" title="マイク感度"><option value="high">感度：高</option><option value="mid" selected>感度：中</option><option value="low">感度：低</option></select>
+      <button id="go" class="primary" disabled>▶ スタート</button>
+    </div>
+  </header>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hint"></div>
+    <div id="overlay"><div id="card"></div></div>
+    <div id="startCover">
+      <canvas id="coverChara" width="32" height="32"></canvas>
+      <div class="title">こえのすけ</div>
+      <p>声が高いと上へ、低いと下へ。<br>流れてくる雲の足場に、こえのすけを乗せ続けよう！<br><span style="font-size:12px">※イヤホン推奨</span></p>
+      <button id="micBtn" class="primary"><span class="blink">▶</span> マイクをONにする</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+// ===== 設定 =====
+const NOTE_NAMES = ['ド','ド#','レ','レ#','ミ','ファ','ファ#','ソ','ソ#','ラ','ラ#','シ'];
+const EXERCISES = {
+  scale: { name: 'ドレミ 上がって下がる', seq: [0,2,4,5,7,5,4,2,0], dur: 2 },
+  jump:  { name: 'とびとび（ド・ミ・ソ）', seq: [0,4,7,4,0,7,0],     dur: 2 },
+  high:  { name: '高音チャレンジ',         seq: [0,4,7,12,11,7,4,0], dur: 2 },
+  long:  { name: 'ロングトーン',           seq: [0,7,4,0],           dur: 4 },
+};
+const BPM = 100, BEAT = 60 / BPM;              // テンポ（音の長さは拍で決める）
+const GUIDE_LEAD = 2 * BEAT, GUIDE_LEN = 0.9 * BEAT, GAP = 2 * BEAT;
+const GATE_MIN = { high: 0.006, mid: 0.012, low: 0.022 };   // 感度ごとの最低ライン
+let noiseFloor = 0.003, gateNow = 0.012;              // 周りの雑音の大きさを常に学習して、しきい値を自動で上げ下げ
+const SCROLL_PX = 150;       // 練習中のスクロール速度(CSS px/秒)
+const FREE_SCROLL = 45;      // 自由モードのスクロール速度
+const FONT = '"DotGothic16", ui-monospace, monospace';
+
+// ===== ドット絵（16x16） =====
+// o:輪郭 b:体 h:ハイライト n:音符アンテナ f:足
+const BODY = [
+  '..........nnn...',
+  '..........n..n..',
+  '..........n.....',
+  '.....oooooo.....',
+  '...oobbbbbboo...',
+  '..obhhbbbbbbbo..',
+  '.obhbbbbbbbbbbo.',
+  '.obbbbbbbbbbbbo.',
+  'obbbbbbbbbbbbbbo',
+  'obbbbbbbbbbbbbbo',
+  'obbbbbbbbbbbbbbo',
+  'obbbbbbbbbbbbbbo',
+  '.obbbbbbbbbbbbo.',
+  '.obbbbbbbbbbbbo.',
+  '..oobbbbbbbboo..',
+  '...offo..offo...',
+];
+const FEET_B = '....offo..offo..';
+const PAL = { o:'#3b2a4a', b:'#ffe3c2', h:'#ffffff', n:'#ff6f91', f:'#c97a5a' };
+const INK = '#3b2a4a', CHEEK = '#ff9eb0', MOUTH = '#b3364c';
+// 顔パーツ（[x,y,色]の配列）
+const FACES = {
+  normal: [[5,9],[5,10],[10,9],[10,10],[7,12],[8,12]],
+  blink:  [[4,10],[5,10],[6,10],[9,10],[10,10],[11,10],[7,12],[8,12]],
+  happy:  [[4,10],[5,9],[6,10],[9,10],[10,9],[11,10],[6,11,MOUTH],[7,11,MOUTH],[8,11,MOUTH],[9,11,MOUTH],[7,12,MOUTH],[8,12,MOUTH]],
+  high:   [[4,8],[5,8],[4,9],[5,9],[10,8],[11,8],[10,9],[11,9],[7,11,MOUTH],[8,11,MOUTH],[7,12,MOUTH],[8,12,MOUTH]],
+  low:    [[5,9],[5,10],[10,9],[10,10],[6,12],[7,11],[8,12],[9,11]],
+  sing:   [[5,9],[5,10],[10,9],[10,10],[7,11,MOUTH],[8,11,MOUTH],[7,12,MOUTH],[8,12,MOUTH]],
+  sleep:  [[4,10],[5,10],[6,10],[9,10],[10,10],[11,10],[7,12],[8,12]],
+};
+const CHEEKS = [[3,11],[4,11],[11,11],[12,11]];
+
+// ===== 要素 =====
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+const exSel = $('ex');
+for (const [k, v] of Object.entries(EXERCISES)) {
+  const o = document.createElement('option'); o.value = k; o.textContent = v.name; exSel.appendChild(o);
+}
+let keyShift = 0;
+$('kDown').onclick = () => { keyShift = Math.max(-6, keyShift - 1); $('kVal').textContent = keyShift; };
+$('kUp').onclick   = () => { keyShift = Math.min( 6, keyShift + 1); $('kVal').textContent = keyShift; };
+
+// ===== 32ドットのこえのすけ v3（ヘッドホン・前髪・服の一体感） =====
+const SPR_CACHE = {};
+function makeSprite32(face, walking) {
+  const key = face + (walking ? 'w' : '');
+  if (SPR_CACHE[key]) return SPR_CACHE[key];
+  const cv2 = document.createElement('canvas'); cv2.width = cv2.height = 32;
+  const x = cv2.getContext('2d');
+  const OUT = '#3b2a4a', W = '#ffffff';
+  const px = (i, j, col) => { if (i < 0 || j < 0 || i > 31 || j > 31) return; x.fillStyle = col; x.fillRect(i, j, 1, 1); };
+  const rect = (i, j, w, h, col) => { x.fillStyle = col; x.fillRect(i, j, w, h); };
+  const ell = (cx, cy, rx, ry) => (i, j) => { const dx = (i + 0.5 - cx) / rx, dy = (j + 0.5 - cy) / ry; return dx * dx + dy * dy <= 1; };
+  const tone = (T, d, i, j) => {
+    let col = d > 0.5 ? T[0] : d > -0.25 ? T[1] : d > -0.6 ? T[2] : T[3];
+    if (Math.abs(d - 0.5) < 0.07 && (i + j) % 2) col = T[1];
+    if (Math.abs(d + 0.25) < 0.07 && (i + j) % 2) col = T[2];
+    return col;
+  };
+  function shade(inside, T, cx, cy, rx, ry, outline = true) {
+    for (let j = 0; j < 32; j++) for (let i = 0; i < 32; i++) {
+      if (!inside(i, j)) continue;
+      if (outline && (!inside(i - 1, j) || !inside(i + 1, j) || !inside(i, j - 1) || !inside(i, j + 1))) { px(i, j, OUT); continue; }
+      px(i, j, tone(T, -0.6 * (i + 0.5 - cx) / rx - 0.8 * (j + 0.5 - cy) / ry, i, j));
+    }
+  }
+  const SKIN  = ['#fff4e6', '#ffe3c2', '#f6c9a2', '#e2a982'];
+  const SHIRT = ['#9cbcff', '#6a94ff', '#4a6fe0', '#3653b8'];
+  const PINK  = ['#ffc2da', '#ff86b4', '#e2608f', '#b8456f'];
+  const HAIR  = ['#c98a62', '#a0684a', '#7c4c38', '#5a3428'];
+  const BAND  = ['#cbbcff', '#9a82f5', '#7c62e0', '#5c45b8'];
+
+  // 足
+  const fo = walking ? 1 : 0;
+  for (const [a, b] of [[10 + fo, 14 + fo], [17 - fo, 21 - fo]]) {
+    for (let i = a; i <= b; i++) for (let j = 28; j <= 31; j++) {
+      if ((i === a || i === b) && (j === 28 || j === 31)) continue;
+      const edge = i === a || i === b || j === 28 || j === 31;
+      px(i, j, edge ? OUT : (j === 29 ? '#7a5a8a' : '#5a3f6a'));
+    }
+  }
+  // 腕（そで＋手）→ 体 の順に重ねて付け根を隠す
+  for (const [sx, hx] of [[8.6, 7.4], [23.4, 24.6]]) {
+    shade(ell(sx, 24.2, 2.8, 2.8), SHIRT, sx, 24.2, 2.8, 2.8);
+    shade(ell(hx, 26.6, 1.9, 1.7), SKIN, hx, 26.6, 1.9, 1.7);
+  }
+  const body = ell(16, 25, 8.2, 5.4);
+  shade(body, SHIRT, 16, 25, 8.2, 5.4);
+  // 頭
+  const head = ell(16, 12, 11.8, 9.8);
+  shade(head, SKIN, 16, 12, 11.8, 9.8);
+  // あごの下の影（頭と体をつなげる）
+  for (let i = 0; i < 32; i++) for (let j = 18; j < 28; j++) {
+    if (body(i, j) && !head(i, j) && head(i, j - 1) && body(i - 1, j) && body(i + 1, j)) { px(i, j, SHIRT[3]); if (body(i, j + 1)) px(i, j + 1, SHIRT[2]); }
+  }
+  // 襟（あごに沿って白い襟）
+  for (const [i, j] of [[10,21],[11,22],[12,22],[13,23],[14,23],[22,21],[21,22],[20,22],[19,23],[18,23]]) px(i, j, W);
+  for (const [i, j] of [[10,22],[11,23],[12,23],[13,24],[14,24],[22,22],[21,23],[20,23],[19,24],[18,24]]) px(i, j, '#c9d2f0');
+  // 胸の音符ボタン
+  px(16, 25, '#ffd36b'); px(16, 26, '#e0a83a'); px(16, 28, '#ffd36b');
+  // 前髪とサイドの髪
+  const hairLine = i => (i <= 6 || i >= 25) ? 15.5 : 6.8 + 1.6 * Math.abs(Math.sin((i - 3.5) * 0.62));
+  for (let j = 0; j < 32; j++) for (let i = 0; i < 32; i++) {
+    if (!head(i, j) || j > hairLine(i)) continue;
+    const onEdge = !head(i - 1, j) || !head(i + 1, j) || !head(i, j - 1);
+    if (onEdge) { px(i, j, OUT); continue; }
+    const tip = j + 1 > hairLine(i);
+    px(i, j, tip ? HAIR[3] : tone(HAIR, -0.6 * (i + 0.5 - 16) / 11.8 - 0.8 * (j + 0.5 - 12) / 9.8, i, j));
+  }
+  px(9, 4, '#e8b48e'); px(10, 4, '#e8b48e'); px(11, 5, '#e8b48e');            // 髪のつや
+  // ヘッドバンド
+  const outer = ell(16, 12.6, 13.9, 12.4), inner = ell(16, 12.6, 12.1, 10.0);
+  const band = (i, j) => j <= 9 && outer(i, j) && !inner(i, j);
+  for (let j = 0; j <= 9; j++) for (let i = 0; i < 32; i++) {
+    if (!band(i, j)) continue;
+    const edge = !band(i, j - 1) || !band(i - 1, j) || !band(i + 1, j) || (!band(i, j + 1) && j < 8 && !outer(i, j + 1));
+    px(i, j, edge ? OUT : (j <= 1 ? BAND[0] : BAND[1]));
+  }
+  
+  // 音符のアホ毛（バンドの上にぴょこん）
+  for (let j = 0; j <= 2; j++) px(18, j, '#ff6f91');
+  px(19, 0, '#ff6f91'); px(20, 1, '#ff6f91'); px(17, 2, '#ff6f91'); px(17, 3, '#e0507a'); px(18, 3, '#e0507a');
+  // イヤーカップ
+  for (const cx of [3.4, 28.6]) {
+    const cup = ell(cx, 13.2, 3.5, 5.3);
+    shade(cup, PINK, cx - 1, 11, 3.5, 5.3);
+    const padX = cx < 16 ? 6 : 25;
+    for (let j = 9; j <= 17; j++) if (cup(padX, j) && !cup(padX + (cx < 16 ? 1 : -1), j) === false) px(padX, j, '#8a3a62');
+    px(Math.round(cx) - 1, 10, W); px(Math.round(cx) - 1, 11, PINK[0]);
+  }
+  // ほっぺ
+  for (const ox of [5, 23]) { rect(ox, 17, 4, 2, '#ff9eb0'); px(ox, 17, '#ffc4d0'); }
+  // 顔
+  const MOUTH = '#c2414f', TONGUE = '#ff8fa3', SHINE = '#5d4c8c';
+  const eyes = (o = 0) => {
+    for (const ex of [9, 20]) { rect(ex, 12 + o, 3, 4, OUT); px(ex, 12 + o, W); px(ex + 1, 12 + o, W); px(ex + 2, 14 + o, SHINE); px(ex + 1, 15 + o, '#5a4a8a'); }
+  };
+  switch (face) {
+    case 'blink':
+      for (const ex of [9, 20]) { px(ex, 14, OUT); px(ex + 1, 15, OUT); px(ex + 2, 14, OUT); }
+      px(15, 19, OUT); px(16, 19, OUT); break;
+    case 'sleep':
+      for (const ex of [9, 20]) rect(ex, 15, 3, 1, OUT);
+      px(15, 19, OUT); px(16, 19, OUT); break;
+    case 'happy':
+      for (const ex of [9, 20]) { px(ex, 15, OUT); px(ex + 1, 14, OUT); px(ex + 2, 15, OUT); px(ex + 1, 13, OUT); }
+      rect(14, 18, 4, 1, OUT); rect(14, 19, 4, 1, MOUTH); rect(15, 20, 2, 1, TONGUE);
+      px(13, 18, OUT); px(18, 18, OUT); px(13, 19, OUT); px(18, 19, OUT); px(14, 20, OUT); px(17, 20, OUT); rect(15, 21, 2, 1, OUT); break;
+    case 'high':
+      for (const ex of [9, 20]) { rect(ex, 11, 3, 5, OUT); px(ex, 11, W); px(ex + 1, 11, W); px(ex, 12, W); px(ex + 2, 14, SHINE); }
+      rect(15, 18, 2, 1, OUT); rect(15, 19, 2, 2, MOUTH); px(14, 19, OUT); px(17, 19, OUT); px(14, 20, OUT); px(17, 20, OUT); rect(15, 21, 2, 1, OUT); break;
+    case 'low':
+      eyes(1);
+      px(9, 11, OUT); px(10, 11, OUT); px(11, 10, OUT); px(20, 10, OUT); px(21, 11, OUT); px(22, 11, OUT);
+      px(13, 20, OUT); px(14, 19, OUT); px(15, 20, OUT); px(16, 19, OUT); px(17, 20, OUT); px(18, 19, OUT); break;
+    case 'sing':
+      eyes();
+      rect(15, 18, 2, 1, OUT); rect(14, 19, 4, 1, MOUTH); rect(15, 20, 2, 1, TONGUE);
+      px(13, 19, OUT); px(18, 19, OUT); px(14, 20, OUT); px(17, 20, OUT); rect(15, 21, 2, 1, OUT); break;
+    default:
+      eyes(); px(14, 19, OUT); px(15, 20, OUT); px(16, 20, OUT); px(17, 19, OUT);
+  }
+  SPR_CACHE[key] = cv2;
+  return cv2;
+}
+
+// タイトル画面のキャラ
+$('coverChara').getContext('2d').drawImage(makeSprite32('happy', false), 0, 0);
+
+// ===== 状態 =====
+let ac = null, analyser = null, buf = null, yinBuf = null;
+let mode = 'off';
+let notes = [], t0 = 0, endTime = 0, tol = 35;
+let combo = 0, bestCombo = 0;
+let hist = [], curMidi = null, lastVoicedAt = 0, curRms = 0;
+let charY = null, jump = 0, animT = 0, scrollX = 0, lastFrame = 0;
+let trail = [], particles = [], popups = [];
+let W = 0, H = 0, dpr = 1, P = 3;
+let hills1 = [], hills2 = [], stars = [];
+
+// ===== 画面サイズ =====
+function resize() {
+  const r = cv.getBoundingClientRect();
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = r.width; H = r.height;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  P = Math.max(2, Math.min(4, Math.round(Math.min(W, H) / 120)));
+  // 背景の山と星
+  hills1 = []; hills2 = [];
+  for (let i = 0; i < 400; i++) {
+    hills1.push(Math.round(6 + 4 * Math.sin(i * 0.13) + 2 * Math.sin(i * 0.37)));
+    hills2.push(Math.round(10 + 6 * Math.sin(i * 0.07 + 1) + 3 * Math.sin(i * 0.23)));
+  }
+  stars = [];
+  for (let i = 0; i < 40; i++) stars.push({ x: Math.random(), y: Math.random() * 0.5, tw: Math.random() * 6 });
+}
+window.addEventListener('resize', resize);
+
+// ===== マイク開始 =====
+$('micBtn').onclick = async () => {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    ac = new AC();
+    await ac.resume();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    const src = ac.createMediaStreamSource(stream);
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 2048;
+    src.connect(analyser);
+    buf = new Float32Array(analyser.fftSize);
+    yinBuf = new Float32Array(analyser.fftSize / 2);
+    $('startCover').style.display = 'none';
+    $('go').disabled = false;
+    mode = 'free';
+    resize();
+    lastFrame = performance.now() / 1000;
+    requestAnimationFrame(loop);
+  } catch (e) {
+    alert('マイクを使えませんでした。ブラウザの設定でマイクを許可してください。\n' + e.message);
+  }
+};
+
+// ===== 音程検出（YIN法） =====
+function detectPitch() {
+  analyser.getFloatTimeDomainData(buf);
+  const N = buf.length, sr = ac.sampleRate;
+  let rms = 0;
+  for (let i = 0; i < N; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / N);
+  curRms = rms;
+  // 雑音レベルの学習（声が出ていないときの音量を、ゆっくり追いかける）
+  if (rms < gateNow) noiseFloor = noiseFloor * 0.97 + rms * 0.03;
+  else noiseFloor = noiseFloor * 0.999 + Math.min(rms, noiseFloor * 2) * 0.001;
+  gateNow = Math.max(GATE_MIN[$('sens').value] || 0.012, noiseFloor * 3.5);
+  if (rms < gateNow) return null;
+  const Wn = N / 2;
+  const tMax = Math.min(Wn - 2, Math.floor(sr / 75));    // 人の声の範囲（約75〜1000Hz）だけを見る
+  const tMin = Math.floor(sr / 1000);
+  const d = yinBuf;
+  d[0] = 1;
+  let running = 0;
+  for (let tau = 1; tau <= tMax; tau++) {
+    let sum = 0;
+    for (let i = 0; i < Wn; i++) { const df = buf[i] - buf[i + tau]; sum += df * df; }
+    running += sum;
+    d[tau] = running ? sum * tau / running : 1;
+  }
+  let tau = -1;
+  for (let t = tMin; t <= tMax; t++) {
+    if (d[t] < 0.1) { while (t + 1 <= tMax && d[t + 1] < d[t]) t++; tau = t; break; }
+  }
+  if (tau < 0 || d[tau] > 0.08) return null;              // 「音程のはっきりした音」だけを声とみなす
+  const x0 = d[tau - 1], x1 = d[tau], x2 = tau + 1 <= tMax ? d[tau + 1] : x1;
+  const den = x0 + x2 - 2 * x1;
+  const better = den ? tau + (x0 - x2) / (2 * den) : tau;
+  return 69 + 12 * Math.log2(sr / better / 440);
+}
+function smoothMidi(m) {
+  hist.push(m);
+  if (hist.length > 7) hist.shift();
+  const v = hist.filter(x => x !== null);
+  if (v.length < 5) return null;                            // 一瞬の音ではなく、続いている声だけ
+  const s = [...v].sort((a, b) => a - b);
+  let med = s[Math.floor(s.length / 2)];
+  const steady = v.filter(x => Math.abs(x - med) < 1 || Math.abs(Math.abs(x - med) - 12) < 1).length;
+  if (steady < 4) return null;                              // 高さがバラバラな音（物音・息）は無視
+  if (curMidi !== null) {
+    const diff = med - curMidi;
+    if (Math.abs(Math.abs(diff) - 12) < 0.6) med -= 12 * Math.sign(diff);
+  }
+  return med;
+}
+
+// ===== 練習の組み立て =====
+function buildExercise() {
+  const ex = EXERCISES[exSel.value];
+  const base = parseInt($('voice').value, 10) + keyShift;
+  tol = parseInt($('level').value, 10);
+  notes = [];
+  let t = 4 * BEAT;                       // 1小節のカウントイン
+  for (const step of ex.seq) {
+    notes.push({ m: base + step, step, start: t, dur: ex.dur * BEAT, samples: [], done: false, ratio: 0 });
+    t += ex.dur * BEAT + GAP;
+  }
+  endTime = t - GAP + 0.6;
+}
+function playGuide(m, when) {
+  const osc = ac.createOscillator(), g = ac.createGain();
+  osc.type = 'square';                       // ファミコンっぽい矩形波
+  osc.frequency.value = 440 * Math.pow(2, (m - 69) / 12);
+  g.gain.setValueAtTime(0, when);
+  g.gain.linearRampToValueAtTime(0.1, when + 0.02);
+  g.gain.setValueAtTime(0.1, when + GUIDE_LEN - 0.1);
+  g.gain.linearRampToValueAtTime(0, when + GUIDE_LEN);
+  osc.connect(g).connect(ac.destination);
+  osc.start(when); osc.stop(when + GUIDE_LEN + 0.05);
+}
+function blip(freq, len = 0.08, vol = 0.05) {      // 効果音
+  if (!ac) return;
+  const now = ac.currentTime;
+  const osc = ac.createOscillator(), g = ac.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(freq, now);
+  osc.frequency.linearRampToValueAtTime(freq * 1.5, now + len);
+  g.gain.setValueAtTime(vol, now);
+  g.gain.linearRampToValueAtTime(0, now + len);
+  osc.connect(g).connect(ac.destination);
+  osc.start(now); osc.stop(now + len + 0.02);
+}
+
+
+// ===== ファミコン風の音源：ドラム（ノイズ）＋伴奏（三角波ベース・矩形波アルペジオ） =====
+let noiseBuf = null, pulse25 = null, musicNodes = [], musicOut = null;
+const mf = m => 440 * Math.pow(2, (m - 69) / 12);
+function initSynth() {
+  if (noiseBuf) return;
+  noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  let v = 0;
+  for (let i = 0; i < d.length; i++) { if (i % 2 === 0) v = Math.random() * 2 - 1; d[i] = v; }   // 粗いノイズ（昔のゲーム機っぽく）
+  const n = 32, re = new Float32Array(n), im = new Float32Array(n);
+  for (let k = 1; k < n; k++) re[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * 0.25);
+  pulse25 = ac.createPeriodicWave(re, im);
+}
+function stopMusic() {
+  for (const nd of musicNodes) { try { nd.stop(); } catch (e) {} }
+  musicNodes = [];
+  if (musicOut) { try { musicOut.disconnect(); } catch (e) {} musicOut = null; }
+}
+function env(g, t, vol, len) { g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + len); }
+function synthTone(wave, freq, t, len, vol) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  if (typeof wave === 'string') o.type = wave; else o.setPeriodicWave(wave);
+  o.frequency.setValueAtTime(freq, t);
+  env(g, t, vol, len);
+  o.connect(g).connect(musicOut); o.start(t); o.stop(t + len + 0.02); musicNodes.push(o);
+}
+function noiseHit(t, len, vol, type, freq, q = 0.8) {
+  const s2 = ac.createBufferSource(); s2.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = ac.createGain(); env(g, t, vol, len);
+  s2.connect(f).connect(g).connect(musicOut); s2.start(t, Math.random() * 0.5); s2.stop(t + len + 0.02); musicNodes.push(s2);
+}
+function kick(t) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'triangle'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+  env(g, t, 0.55, 0.16);
+  o.connect(g).connect(musicOut); o.start(t); o.stop(t + 0.2); musicNodes.push(o);
+}
+// 練習の音に合う和音（移動ドの度数 → I・IV・Vのどれか）
+const chordRoot = step => ({ 0: 0, 2: 7, 4: 0, 5: 5, 7: 0, 9: 5, 11: 7 })[((step % 12) + 12) % 12] ?? 0;
+function scheduleMusic(acT0) {
+  stopMusic(); initSynth();
+  musicOut = ac.createGain(); musicOut.gain.value = 0.9; musicOut.connect(ac.destination);
+  const tonic = tonicMidi(), beats = Math.ceil(endTime / BEAT);
+  const useBeat = $('beat').checked, useAcc = $('accomp').checked;
+  const chordAt = t => { for (const n of notes) if (t >= n.start - GAP - 1e-6 && t < n.start + n.dur) return chordRoot(n.step); return 0; };
+  for (let b = 0; b < beats; b++) {
+    const tb = b * BEAT, t = acT0 + tb;
+    const countIn = tb < notes[0].start - 1e-6;
+    if (useBeat) {
+      if (countIn) { noiseHit(t, 0.04, b === 0 ? 0.22 : 0.14, 'highpass', 6000); }
+      else {
+        if (b % 2 === 0) kick(t); else noiseHit(t, 0.13, 0.22, 'bandpass', 1800);
+        noiseHit(t, 0.03, 0.08, 'highpass', 7000); noiseHit(t + BEAT / 2, 0.03, 0.06, 'highpass', 7000);
+      }
+    }
+    if (useAcc && !countIn) {
+      const root = chordAt(tb);
+      const tri = [0, 4, 7].map(v => tonic + root + v);
+      synthTone('triangle', mf(tonic - 12 + root), t, BEAT * 0.45, 0.22);                    // ベース
+      const arp = [tri[0], tri[1], tri[2], tri[1]];
+      for (let k = 0; k < 2; k++) synthTone(pulse25, mf(arp[(b * 2 + k) % 4] + 12), t + k * BEAT / 2, BEAT * 0.4, 0.035);   // アルペジオ
+    }
+  }
+}
+
+$('go').onclick = () => {
+  if (!ac) return;
+  ac.resume();
+  $('overlay').style.display = 'none';
+  buildExercise();
+  combo = 0; bestCombo = 0; trail = []; particles = []; popups = [];
+  t0 = performance.now() / 1000;
+  const acT0 = ac.currentTime;
+  if ($('guide').checked) for (const n of notes) playGuide(n.m, acT0 + n.start - GUIDE_LEAD);
+  scheduleMusic(acT0);
+  mode = 'exercise';
+  $('go').disabled = true;
+};
+
+// ===== 座標 =====
+function groundH() { return P * 17; }
+function viewRange() {
+  if (mode === 'exercise' || mode === 'result') {
+    const ms = notes.map(n => n.m);
+    return [Math.min(...ms) - 5, Math.max(...ms) + 5];
+  }
+  const base = parseInt($('voice').value, 10) + keyShift;
+  return [base - 7, base + 19];
+}
+function yOf(m, lo, hi) {
+  const top = 28, bot = H - groundH() - 26;
+  return top + (hi - m) / (hi - lo) * (bot - top);
+}
+const snap = v => Math.round(v / P) * P;
+function foldInto(m, lo, hi) { while (m > hi + 0.5) m -= 12; while (m < lo - 0.5) m += 12; return m; }
+function foldCents(c) { while (c > 600) c -= 1200; while (c < -600) c += 1200; return c; }
+// 移動ド：選んだ声の高さ＋キーを「ド」とする
+function tonicMidi() { return parseInt($('voice').value, 10) + keyShift; }
+const relOf = m => (((Math.round(m) - tonicMidi()) % 12) + 12) % 12;
+const noteName = m => NOTE_NAMES[relOf(m)];
+const isWhite = rel => [0,2,4,5,7,9,11].includes(rel);
+const KW = () => P * 11;   // 左の鍵盤の幅
+
+// ===== メインループ =====
+function loop() {
+  requestAnimationFrame(loop);
+  const nowAbs = performance.now() / 1000;
+  const dt = Math.min(0.05, nowAbs - lastFrame); lastFrame = nowAbs;
+  animT += dt;
+  // お手本の音が鳴っている間は、マイクが拾ったお手本を声と間違えないよう判定を止める
+  const tt = nowAbs - t0;
+  const guidePlaying = mode === 'exercise' && $('guide').checked && notes.some(n => tt >= n.start - GUIDE_LEAD - 0.05 && tt < n.start - GUIDE_LEAD + GUIDE_LEN + 0.12);
+  const raw = detectPitch();
+  const m = smoothMidi(guidePlaying ? null : raw);
+  if (m !== null) { curMidi = m; lastVoicedAt = nowAbs; }
+  else if (nowAbs - lastVoicedAt > 0.25) curMidi = null;
+
+  const [lo, hi] = viewRange();
+  const charX = snap(W * 0.28);
+  const t = nowAbs - t0;
+  const speed = mode === 'exercise' ? SCROLL_PX : (curMidi !== null ? FREE_SCROLL : 0);
+  scrollX += speed * dt;
+
+  // --- 判定 ---
+  let active = null, dev = null, expr = 'normal';
+  if (mode === 'exercise') {
+    active = notes.find(n => t >= n.start && t < n.start + n.dur) || null;
+    if (active) {
+      dev = curMidi !== null ? foldCents((curMidi - active.m) * 100) : null;
+      active.samples.push({ t: t - active.start, dev });
+      if (dev !== null && Math.abs(dev) <= tol) {
+        expr = 'happy';
+        if (Math.random() < 0.3) spawnSparkle(charX, charY ?? H / 2);
+      } else if (dev !== null) expr = dev < 0 ? 'low' : 'high';
+    }
+    for (const n of notes) {
+      if (!n.done && t >= n.start + n.dur) {
+        n.done = true;
+        const tot = n.samples.length || 1;
+        const hit = n.samples.filter(s => s.dev !== null && Math.abs(s.dev) <= tol).length;
+        n.ratio = hit / tot;
+        if (n.ratio >= 0.6) {
+          combo++; bestCombo = Math.max(bestCombo, combo); jump = 1;
+          popups.push({ text: combo >= 3 ? `${combo} COMBO!` : 'NICE!', x: charX, y: (charY ?? H/2) - 40, life: 1, color: '#ffcf5a' });
+          blip(660 + combo * 40);
+        } else {
+          combo = 0;
+          popups.push({ text: 'おしい！', x: charX, y: (charY ?? H/2) - 40, life: 1, color: '#ffb0c0' });
+          blip(220, 0.12, 0.04);
+        }
+      }
+    }
+    if (t > endTime) showResult();
+  }
+  if (expr === 'normal' && curMidi !== null) expr = 'sing';
+  if (curMidi === null && mode !== 'exercise') expr = 'sleep';
+  if (expr === 'normal' && (animT % 3.2) < 0.15) expr = 'blink';
+
+  // --- キャラ位置 ---
+  let targetY = curMidi !== null ? yOf(foldInto(curMidi, lo, hi), lo, hi) : (charY ?? yOf((lo + hi) / 2, lo, hi));
+  charY = charY === null ? targetY : charY + (targetY - charY) * 0.3;
+  jump *= 0.85;
+  if (curMidi !== null) trail.push({ x: charX - 8 * P, y: charY, ok: expr === 'happy', life: 1 });
+  for (const p of trail) { p.x -= speed * dt; p.life -= dt * 0.8; }
+  trail = trail.filter(p => p.life > 0 && p.x > -10);
+
+  draw(lo, hi, charX, t, active, expr);
+
+  // --- ヒント ---
+  let hint = '';
+  if (mode === 'free') hint = curMidi !== null ? `いまの声：${noteName(curMidi)}` : 'ピンクの線が きじゅんの「ド」。声を出すと進むよ';
+  else if (mode === 'exercise') {
+    if (t < notes[0].start - GUIDE_LEAD) hint = 'READY…';
+    else if (active && dev === null) hint = curRms < gateNow ? '声を出して！' : '…';
+    else if (active && Math.abs(dev) <= tol) hint = 'ぴったり！';
+    else if (active) hint = dev < 0 ? 'ちょっと低い ▲' : 'ちょっと高い ▼';
+    else hint = $('guide').checked ? 'お手本を聴いて、雲に合わせてね' : '次の雲に合わせてね';
+  }
+  $('hint').textContent = hint;
+}
+
+// ===== 描画 =====
+function draw(lo, hi, charX, t, active, expr) {
+  drawBackground();
+
+  // 音の段：基準のドは太いピンクの線、ほかのドレミは点線
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  for (let m = Math.ceil(lo); m <= Math.floor(hi); m++) {
+    const rel = relOf(m);
+    if (!isWhite(rel)) continue;
+    const y = snap(yOf(m, lo, hi));
+    if (rel === 0) {
+      ctx.fillStyle = 'rgba(255,111,145,.25)'; ctx.fillRect(KW(), y - P * 2, W - KW(), P * 5);
+      ctx.shadowColor = '#ff6f91'; ctx.shadowBlur = 14; ctx.fillStyle = '#ff8fab'; ctx.fillRect(KW(), y, W - KW(), P); ctx.shadowBlur = 0;
+      ctx.font = `${P * 5}px ${FONT}`;
+      ctx.fillStyle = INK; ctx.fillText('ド', KW() + P * 3, y - P * 3);
+      ctx.fillStyle = '#ffd0dc'; ctx.fillText('ド', KW() + P * 2, y - P * 4);
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,.16)';
+      for (let x = KW() + P * 2; x < W; x += P * 4) ctx.fillRect(x, y, P, P);
+      ctx.font = `${P * 4}px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillText(NOTE_NAMES[rel], KW() + P * 2, y - P * 3);
+    }
+  }
+
+  // 雲の足場
+  if (mode === 'exercise' || mode === 'result') {
+    const pxPerCent = Math.abs(yOf(lo, lo, hi) - yOf(lo + 1, lo, hi)) / 100;
+    for (const n of notes) {
+      const x = snap(charX + (n.start - t) * SCROLL_PX);
+      const w = snap(n.dur * SCROLL_PX);
+      if (x > W + 20 || x + w < -20) continue;
+      const y = yOf(n.m, lo, hi);
+      const hh = snap(Math.max(P * 5, tol * 2 * pxPerCent));
+      let base = '#c9d6ff', light = '#ffffff', dark = '#7e8bd1';
+      if (n.done) {
+        if (n.ratio >= 0.6) { base = '#9ff0b8'; light = '#e6ffee'; dark = '#3fa86a'; }
+        else { base = '#d6c6d6'; light = '#f2e9f2'; dark = '#8f7a8f'; }
+      } else if (n === active) { base = '#ffe08a'; light = '#fff6d0'; dark = '#d19a2a'; }
+      ctx.shadowColor = base; ctx.shadowBlur = n === active ? 22 : (n.done ? 10 : 6);
+      drawCloud(x, snap(y - hh / 2), w, hh, base, light, dark);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = INK; ctx.font = `${P * 4}px ${FONT}`;
+      ctx.fillText(noteName(n.m), x + P * 3, snap(y) + 1);
+      const gs = n.start - GUIDE_LEAD;
+      if ($('guide').checked && t >= gs && t < gs + GUIDE_LEN) drawNoteIcon(x + P * 2, snap(y - hh / 2) - P * 9, '#ffcf5a');
+    }
+  }
+
+  // 軌跡：光のリボン
+  if (trail.length > 2) {
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (let i = 1; i < trail.length; i++) {
+      const a = trail[i - 1], b = trail[i];
+      if (Math.abs(a.x - b.x) > 40) continue;
+      ctx.globalAlpha = Math.max(0, b.life) * (i / trail.length);
+      ctx.strokeStyle = b.ok ? '#8ff5b5' : '#c9d3ff';
+      ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 10;
+      ctx.lineWidth = 2 + 4 * (i / trail.length);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+
+  // パーティクル：光の粒
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy; p.vy += 0.06; p.life -= 0.025;
+    if (p.life <= 0) continue;
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.c; ctx.shadowColor = p.c; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 1.5 + 2.5 * p.life, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  particles = particles.filter(p => p.life > 0);
+
+  // キャラ
+  const scale = P;
+  const sx = snap(charX - 8 * scale);
+  const beatPh = mode === 'exercise' ? ((t / BEAT) % 1 + 1) % 1 : 1;
+  const bob = (beatPh < 0.18 ? -P : 0) + ((expr === 'sing' || expr === 'happy') && mode !== 'exercise' && Math.floor(animT * 6) % 2 ? -P : 0);
+  const sy = snap(charY - 9 * scale - jump * P * 5) + bob;
+  const walking = (mode === 'exercise' || curMidi !== null) && Math.floor(animT * 6) % 2 === 1;
+  const auraCol = { happy:'rgba(143,245,181,', low:'rgba(143,200,255,', high:'rgba(255,200,110,' }[expr] || 'rgba(255,230,200,';
+  const ar = 16 * scale * (expr === 'happy' ? 1.25 + 0.08 * Math.sin(animT * 10) : 1.0);
+  const ag = ctx.createRadialGradient(sx + 8 * scale, sy + 9 * scale, 2, sx + 8 * scale, sy + 9 * scale, ar);
+  ag.addColorStop(0, auraCol + '.45)'); ag.addColorStop(1, auraCol + '0)');
+  ctx.fillStyle = ag; ctx.fillRect(sx + 8 * scale - ar, sy + 9 * scale - ar, ar * 2, ar * 2);
+  // 床に落ちる影（高く飛ぶほど小さく薄く）
+  const floorY = H - groundH() + P * 2;
+  const hgt = Math.max(0, floorY - (sy + 16 * scale));
+  const ssc = Math.max(0.25, 1 - hgt / (H * 0.9));
+  ctx.fillStyle = `rgba(20,0,30,${0.45 * ssc})`;
+  ctx.beginPath(); ctx.ellipse(sx + 8 * scale + 6, floorY, 9 * scale * ssc, 2.2 * scale * ssc, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(makeSprite32(expr, walking), sx, sy, 16 * scale, 16 * scale);
+  // 汗・びっくり・zzz
+  ctx.font = `${P * 5}px ${FONT}`; ctx.textAlign = 'center';
+  if (expr === 'low') { ctx.fillStyle = '#8fd3ff'; ctx.fillRect(sx + 15 * P, sy + 4 * P, P, P * 2); ctx.fillRect(sx + 14 * P, sy + 6 * P, P * 3, P * 2); }
+  if (expr === 'high') { ctx.fillStyle = '#ffcf5a'; ctx.fillRect(sx + 16 * P, sy + 1 * P, P, P * 4); ctx.fillRect(sx + 16 * P, sy + 6 * P, P, P); }
+  if (expr === 'sleep') { ctx.fillStyle = '#fff'; ctx.fillText('z', sx + 18 * P, sy + 2 * P + Math.sin(animT * 2) * P * 2); ctx.fillText('z', sx + 21 * P, sy - P * 2 + Math.sin(animT * 2 + 1) * P * 2); }
+
+  // ポップアップ文字
+  ctx.font = `${P * 6}px ${FONT}`;
+  for (const p of popups) {
+    p.y -= 0.6; p.life -= 0.015;
+    if (p.life <= 0) continue;
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.shadowColor = p.color; ctx.shadowBlur = 14;
+    ctx.fillStyle = p.color; ctx.fillText(p.text, p.x, p.y);
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalAlpha = 1; ctx.textAlign = 'left';
+  popups = popups.filter(p => p.life > 0);
+
+  drawPost();
+  // 左の鍵盤（最前面）
+  drawKeyboard(lo, hi, active);
+
+  // スコア風の表示
+  if (mode === 'exercise') {
+    ctx.font = `${P * 5}px ${FONT}`; ctx.textAlign = 'right';
+    const done = notes.filter(n => n.done).length;
+    ctx.fillStyle = INK; ctx.fillText(`${done}/${notes.length}  COMBO ${combo}`, W - P * 3 + P, P * 6 + P);
+    ctx.fillStyle = '#fff'; ctx.fillText(`${done}/${notes.length}  COMBO ${combo}`, W - P * 3, P * 6);
+    ctx.textAlign = 'left';
+  }
+}
+
+const offCache = {};
+function blurLayer(factor, fn) {
+  // 縮小して描いてから拡大する「なんちゃってぼかし」（どの端末でも軽く動く）
+  let o = offCache[factor];
+  const w = Math.ceil(W / factor), h = Math.ceil(H / factor);
+  if (!o || o.w !== w || o.h !== h) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    o = offCache[factor] = { c, x: c.getContext('2d'), w, h };
+  }
+  o.x.setTransform(1, 0, 0, 1, 0, 0); o.x.clearRect(0, 0, w, h);
+  o.x.setTransform(1 / factor, 0, 0, 1 / factor, 0, 0);
+  fn(o.x);
+  ctx.save(); ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(o.c, 0, 0, w, h, 0, 0, W, H);
+  ctx.restore();
+}
+// ===== ライブステージ（声とビートに反応する背景） =====
+const PX = () => P / 2;
+let freqBuf = null, bars = [];
+const AUD = Array.from({ length: 50 }, (_, i) => ({ x: i * 12 + ((i * 37) % 6), h: 12 + ((i * 13) % 5), ph: (i * 1.7) % 6.28,
+  light: i % 3 !== 1, col: ['#ff6f91', '#5ee3e0', '#ffcf5a', '#9ff07a', '#c49bff'][i % 5] }));
+function beatInfo() {
+  if (mode === 'exercise') {
+    const t = performance.now() / 1000 - t0, b = t / BEAT;
+    return { ph: ((b % 1) + 1) % 1, bar: Math.floor(b / 4), on: true };
+  }
+  return { ph: (animT * 0.9) % 1, bar: Math.floor(animT * 0.9 / 4), on: false };
+}
+function drawBackground() {
+  const gH = groundH(), stageY = H - gH, lite = $('lite').checked, u = PX();
+  const bi = beatInfo(), kick = bi.on ? Math.max(0, 1 - bi.ph * 4) : 0.15 * Math.max(0, 1 - bi.ph * 3);
+  const hype = Math.min(1, combo / 6);                                   // コンボで会場が盛り上がる
+  // 奥の壁
+  const g = ctx.createLinearGradient(0, 0, 0, stageY);
+  g.addColorStop(0, '#0b0619'); g.addColorStop(0.6, '#1c0f36'); g.addColorStop(1, '#2c1548');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, stageY);
+  ctx.fillStyle = 'rgba(255,255,255,.025)';
+  for (let x = 0; x < W; x += 16 * u) ctx.fillRect(x, 0, u, stageY);
+
+  // LEDスクリーン（マイクの音をそのままイコライザーに）
+  const sx = KW() + W * 0.07, sw = W - sx - W * 0.05, sy = stageY * 0.1, sh = stageY * 0.28;
+  ctx.fillStyle = '#05030c'; ctx.fillRect(sx - 2 * u, sy - 2 * u, sw + 4 * u, sh + 4 * u);
+  ctx.fillStyle = '#3a2c50'; ctx.fillRect(sx - 2 * u, sy - 2 * u, sw + 4 * u, u); ctx.fillRect(sx - 2 * u, sy + sh + u, sw + 4 * u, u);
+  const cell = 3 * u, cols = Math.floor(sw / cell), rows = Math.floor(sh / cell);
+  const nb = Math.max(8, Math.floor(cols / 3));
+  if (analyser) {
+    if (!freqBuf) freqBuf = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(freqBuf);
+  }
+  while (bars.length < nb) bars.push(0);
+  for (let k = 0; k < nb; k++) {
+    let v = 0;
+    if (freqBuf && curRms > gateNow * 0.7) {
+      const f0 = 90 * Math.pow(4000 / 90, k / nb), f1 = 90 * Math.pow(4000 / 90, (k + 1) / nb);
+      const b0 = Math.floor(f0 * analyser.fftSize / ac.sampleRate), b1 = Math.max(b0 + 1, Math.floor(f1 * analyser.fftSize / ac.sampleRate));
+      for (let b = b0; b < b1 && b < freqBuf.length; b++) v = Math.max(v, freqBuf[b] / 255);
+      v = Math.max(0, (v - 0.35) / 0.65);
+    }
+    const idle = 0.08 + 0.06 * Math.sin(animT * 2 + k * 0.7) + kick * 0.35 * Math.max(0, 1 - k / (nb * 0.4));
+    v = Math.max(v, idle);
+    bars[k] = Math.max(v, bars[k] - 0.04);
+  }
+  for (let c = 0; c < cols; c++) {
+    const k = Math.min(nb - 1, Math.floor(c / cols * nb));
+    const lit = Math.round(bars[k] * rows);
+    for (let r = 0; r < rows; r++) {
+      const on = (c % 3 !== 2) && r < lit;
+      const ry = sy + sh - (r + 1) * cell;
+      if (on) { ctx.globalAlpha = 0.38; ctx.fillStyle = r > rows * 0.75 ? '#ff6f91' : r > rows * 0.45 ? '#ffcf5a' : '#5ee3e0'; }
+      else { ctx.globalAlpha = 1; ctx.fillStyle = '#120a22'; }
+      ctx.fillRect(sx + c * cell, ry, cell - u * 0.6, cell - u * 0.6);
+    }
+  }
+  ctx.globalAlpha = 1;
+  if (!lite) {                                                           // スクリーンの光が壁に漏れる
+    const avg = bars.reduce((a, b) => a + b, 0) / bars.length;
+    const sg = ctx.createRadialGradient(sx + sw / 2, sy + sh / 2, sh * 0.3, sx + sw / 2, sy + sh / 2, sw * 0.8);
+    sg.addColorStop(0, `rgba(120,200,255,${0.06 + avg * 0.18})`); sg.addColorStop(1, 'rgba(120,200,255,0)');
+    ctx.fillStyle = sg; ctx.fillRect(0, 0, W, stageY);
+  }
+
+  // トラス（照明を吊る骨組み）
+  const ty = 3 * u;
+  ctx.fillStyle = '#4a4060'; ctx.fillRect(0, ty, W, u); ctx.fillRect(0, ty + 5 * u, W, u);
+  ctx.fillStyle = '#383050';
+  for (let x = 0; x < W; x += 6 * u) { for (let k = 0; k < 5; k++) ctx.fillRect(x + k * u, ty + (k + 0.5) * u, u, u); }
+
+  // スポットライト（拍で色が変わり、キックで明るく）
+  const palette = [['255,111,145', '94,227,224'], ['255,207,90', '196,155,255'], ['159,240,122', '255,111,145'], ['94,227,224', '255,207,90']];
+  const pal = palette[((bi.bar % 4) + 4) % 4];
+  const lights = lite ? 2 : 4;
+  for (let i = 0; i < lights; i++) {
+    const lx = KW() + (W - KW()) * (i + 0.5) / lights;
+    const ang = Math.sin(animT * 0.6 + i * 1.9) * 0.35 + (i % 2 ? 0.12 : -0.12);
+    const len = stageY * 1.05, spread = 0.16 + 0.05 * hype;
+    const a = 0.07 + 0.10 * kick + 0.08 * hype;
+    const col = pal[i % 2];
+    const ex = lx + Math.sin(ang) * len, ey = ty + 6 * u + Math.cos(ang) * len;
+    const lg = ctx.createLinearGradient(lx, ty, ex, ey);
+    lg.addColorStop(0, `rgba(${col},${a * 1.6})`); lg.addColorStop(1, `rgba(${col},0)`);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = lg;
+    ctx.beginPath(); ctx.moveTo(lx - 2 * u, ty + 6 * u); ctx.lineTo(lx + 2 * u, ty + 6 * u);
+    ctx.lineTo(lx + Math.sin(ang + spread) * len, ty + 6 * u + Math.cos(ang + spread) * len);
+    ctx.lineTo(lx + Math.sin(ang - spread) * len, ty + 6 * u + Math.cos(ang - spread) * len);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.fillStyle = '#20182e'; ctx.fillRect(lx - 3 * u, ty + 5 * u, 6 * u, 4 * u);
+    ctx.fillStyle = `rgb(${col})`; ctx.fillRect(lx - 2 * u, ty + 8 * u, 4 * u, u);
+  }
+
+  // スピーカー（右側。キックで振動）
+  const spW = 18 * u, spX = W - spW - 2 * u;
+  for (let k = 0; k < 2; k++) {
+    const cy = stageY - (k + 1) * 20 * u;
+    ctx.fillStyle = '#120c1c'; ctx.fillRect(spX, cy, spW, 19 * u);
+    ctx.fillStyle = '#2a2236'; ctx.fillRect(spX, cy, spW, u); ctx.fillRect(spX, cy, u, 19 * u);
+    const r = 6 * u * (1 + 0.12 * kick);
+    ctx.fillStyle = '#060409'; ctx.beginPath(); ctx.arc(spX + spW / 2, cy + 10 * u, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#3d3450'; ctx.beginPath(); ctx.arc(spX + spW / 2, cy + 10 * u, r * 0.35, 0, Math.PI * 2); ctx.fill();
+  }
+  // スモーク
+  const fog = ctx.createLinearGradient(0, stageY * 0.6, 0, stageY);
+  fog.addColorStop(0, 'rgba(180,140,255,0)'); fog.addColorStop(1, `rgba(180,140,255,${0.12 + 0.08 * hype})`);
+  ctx.fillStyle = fog; ctx.fillRect(0, stageY * 0.6, W, stageY * 0.4);
+
+  // ステージの床（木目＋前縁のLED）
+  const fh = 7 * u;
+  ctx.fillStyle = '#2b1d33'; ctx.fillRect(0, stageY, W, fh);
+  ctx.fillStyle = '#3a2944'; ctx.fillRect(0, stageY, W, u);
+  ctx.fillStyle = '#22172a';
+  for (let x = (-scrollX * 0) % (20 * u); x < W; x += 20 * u) ctx.fillRect(x, stageY + u, u * 0.6, fh - 2 * u);
+  for (let x = 2 * u, i = 0; x < W; x += 8 * u, i++) {
+    const on = (i + Math.floor(animT * 4)) % 4 === 0 || kick > 0.6;
+    ctx.fillStyle = on ? `rgb(${pal[i % 2]})` : '#3a2b48';
+    ctx.fillRect(x, stageY + fh - 2 * u, 2 * u, u);
+  }
+
+  // 観客（ペンライトが拍に合わせて揺れる。コンボで増える）
+  const ay = stageY + fh;
+  ctx.fillStyle = '#07040d'; ctx.fillRect(0, ay, W, H - ay);
+  const nLit = 0.35 + 0.65 * hype;
+  for (const a of AUD) {
+    const x = a.x * u * 1.2 - 4 * u;
+    if (x > W + 10 * u) break;
+    const jumpY = bi.on && (a.ph % 2 < 1) ? -kick * 2 * u * (0.5 + hype) : 0;
+    const hy = H - a.h * u + jumpY;
+    ctx.fillStyle = '#150c22';
+    ctx.beginPath(); ctx.arc(x, hy, 4.6 * u, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x, hy + 9 * u, 7 * u, 5 * u, 0, Math.PI, 0); ctx.fill();
+    ctx.fillRect(x - 7 * u, hy + 9 * u, 14 * u, H - hy);
+    if (a.light && (a.ph / 6.28) < nLit) {
+      const sw2 = Math.sin((bi.on ? (bi.ph + Math.floor(performance.now() / 1000 / BEAT)) * Math.PI : animT * 2) + a.ph) * 0.5;
+      const bx = x + 5 * u, by = hy + 2 * u, l = 12 * u;
+      const tx = bx + Math.sin(sw2) * l, tyy = by - Math.cos(sw2) * l;
+      ctx.save();
+      if (!lite) { ctx.shadowColor = a.col; ctx.shadowBlur = 8; }
+      ctx.strokeStyle = a.col; ctx.lineWidth = 2 * u; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, tyy); ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+const motes = Array.from({ length: 26 }, () => ({ x: Math.random(), y: Math.random(), s: Math.random() }));
+function drawPost() {
+  if ($('lite').checked) return;
+  // 光の中を漂うちり
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const m of motes) {
+    m.x -= (0.0004 + m.s * 0.0008) + (mode === 'exercise' ? 0.0015 : 0); m.y += Math.sin(animT + m.s * 9) * 0.0004;
+    if (m.x < 0) { m.x = 1; m.y = Math.random(); }
+    ctx.globalAlpha = 0.25 + 0.35 * Math.abs(Math.sin(animT * 2 + m.s * 7));
+    ctx.fillStyle = '#ffe7c7';
+    ctx.beginPath(); ctx.arc(m.x * W, m.y * (H - groundH()), 1 + m.s * 1.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  // ビネット（四隅を暗く）
+  const vg = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.35, W / 2, H * 0.45, Math.max(W, H) * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(10,0,20,.3)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+}
+function drawKeyboard(lo, hi, active) {
+  const kw = KW(), skyBottom = H - groundH();
+  const blackW = snap(kw * 0.6);
+  const cur = curMidi !== null ? Math.round(foldInto(curMidi, lo, hi)) : null;
+  const tgt = active ? active.m : null;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, kw + P, skyBottom); ctx.clip();
+  ctx.fillStyle = INK; ctx.fillRect(0, 0, kw + P, skyBottom);
+  for (let m = Math.floor(lo) - 1; m <= Math.ceil(hi) + 1; m++) {
+    const rel = relOf(m);
+    const yTop = snap(yOf(m + 0.5, lo, hi)), yBot = snap(yOf(m - 0.5, lo, hi));
+    const h = yBot - yTop;
+    if (h <= 0) continue;
+    // 白い部分（黒鍵の段も右側は白鍵の続き）
+    let white = '#fff6e9';
+    if (rel === 0) white = '#ffc2d2';                    // 基準のド
+    if (m === tgt) white = '#c9d6ff';                    // いま狙う音
+    if (m === cur && isWhite(rel)) white = '#ffcf5a';    // いまの声
+    ctx.fillStyle = white; ctx.fillRect(0, yTop, kw, h);
+    // 白鍵の右端に影、上端にハイライト
+    ctx.fillStyle = 'rgba(60,30,80,.18)'; ctx.fillRect(kw - P * 2, yTop, P * 2, h);
+    ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(0, yTop, kw - P * 2, 1);
+    if (!isWhite(rel)) {
+      const bh = Math.max(P, h - P * 2);
+      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(P, yTop + P * 2, blackW, bh);          // 黒鍵の落とす影
+      ctx.fillStyle = m === cur ? '#ffcf5a' : (m === tgt ? '#7e8bd1' : '#2a1f3d');
+      ctx.fillRect(0, yTop + P, blackW, bh);
+      ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(0, yTop + P, blackW - P, P);      // 黒鍵の上面の光
+    }
+    // 白鍵どうしの区切り線
+    const relBelow = relOf(m - 1);
+    if (isWhite(rel) && isWhite(relBelow)) { ctx.fillStyle = INK; ctx.fillRect(0, yBot - P, kw, P); }
+    else if (!isWhite(rel)) { ctx.fillStyle = INK; ctx.fillRect(blackW, yTop + Math.floor(h / 2 / P) * P, kw - blackW, P); }
+  }
+  // 鍵盤の縁
+  ctx.fillStyle = INK; ctx.fillRect(kw, 0, P, skyBottom);
+  ctx.restore();
+}
+function drawHills(arr, offset, color, gH, colW) {
+  ctx.fillStyle = color;
+  const start = Math.floor(offset / colW);
+  const sub = offset % colW;
+  for (let i = 0; i * colW - sub < W + colW; i++) {
+    const h = arr[(start + i) % arr.length] * P;
+    ctx.fillRect(Math.round(i * colW - sub), H - gH - h, colW, h);
+  }
+}
+function drawCloud(x, y, w, h, base, light, dark) {
+  const u = PX(), d = u * 4;
+  ctx.fillStyle = light;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w + d, y - d); ctx.lineTo(x + d, y - d); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w + d, y - d); ctx.lineTo(x + w + d, y + h - d); ctx.lineTo(x + w, y + h); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = dark; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = base; ctx.fillRect(x + u, y + u, w - 2 * u, h - 2 * u);
+  ctx.fillStyle = light; ctx.fillRect(x + u, y + u, w - 2 * u, u);
+  ctx.globalAlpha = 0.18; ctx.fillStyle = '#000'; ctx.fillRect(x + u, y + h - 2 * u, w - 2 * u, u); ctx.globalAlpha = 1;
+}
+function drawNoteIcon(x, y, c) {
+  ctx.fillStyle = c;
+  ctx.fillRect(x + P * 3, y, P, P * 5);
+  ctx.fillRect(x + P * 4, y, P * 2, P); ctx.fillRect(x + P * 5, y + P, P, P);
+  ctx.fillRect(x + P, y + P * 4, P * 3, P * 2);
+}
+function drawSpriteTo(c, x, y, s, face, walking) {
+  for (let r = 0; r < 16; r++) {
+    const row = (r === 15 && walking) ? FEET_B : BODY[r];
+    for (let k = 0; k < 16; k++) {
+      const ch = row[k];
+      if (ch === '.') continue;
+      c.fillStyle = PAL[ch];
+      c.fillRect(x + k * s, y + r * s, s, s);
+    }
+  }
+  c.fillStyle = CHEEK;
+  for (const [cx, cy] of CHEEKS) c.fillRect(x + cx * s, y + cy * s, s, s);
+  for (const [fx, fy, col] of (FACES[face] || FACES.normal)) {
+    c.fillStyle = col || INK;
+    c.fillRect(x + fx * s, y + fy * s, s, s);
+  }
+}
+
+// ===== 結果 =====
+function showResult() {
+  mode = 'result';
+  $('go').disabled = false;
+  const ratios = notes.map(n => n.ratio);
+  const score = Math.round(ratios.reduce((a, b) => a + b, 0) / ratios.length * 100);
+  const voiced = notes.flatMap(n => n.samples.filter(s => s.dev !== null).map(s => Math.max(-300, Math.min(300, s.dev))));
+  const meanDev = voiced.length ? avg(voiced) : 0;
+
+  let scoopCount = 0, unstableCount = 0, judged = 0;
+  for (const n of notes) {
+    const early = n.samples.filter(s => s.dev !== null && s.t < 0.3).map(s => s.dev);
+    const late  = n.samples.filter(s => s.dev !== null && s.t >= 0.3 * n.dur).map(s => s.dev);
+    if (early.length < 3 || late.length < 5) continue;
+    judged++;
+    const e = avg(early), l = avg(late);
+    if (e < -60 && e - l < -50) scoopCount++;
+    if (std(late) > 45) unstableCount++;
+  }
+  const scoop = judged && scoopCount / judged >= 0.4;
+  const unstable = judged && unstableCount / judged >= 0.5;
+
+  let type, advice;
+  if (voiced.length < 10) {
+    type = '声がとどかなかったかも'; advice = 'マイクに声が届いていないようです。もう少し大きめの声か、スマホを口に近づけて試してみてください。';
+  } else if (score >= 85) {
+    type = 'ぴったり職人'; advice = 'ほぼ完璧！「きびしい」や「高音チャレンジ」に進んでみよう。';
+  } else if (scoop) {
+    type = 'しゃくりあげタイプ'; advice = '出だしで下から探りにいく癖があります。声を出す前にお手本の高さを頭の中で鳴らして、「いきなり雲の上に着地する」イメージで歌ってみよう。';
+  } else if (meanDev < -25) {
+    type = 'ちょい低めタイプ'; advice = '全体的に少し低め。お手本より「ほんの少し上」を狙うくらいで、ちょうど良くなることが多いよ。';
+  } else if (meanDev > 25) {
+    type = 'ちょい高めタイプ'; advice = '全体的に少し高め。力んで上ずっているかも。肩の力を抜いて、楽な声で合わせてみよう。';
+  } else if (unstable) {
+    type = 'ふらふらタイプ'; advice = '高さは合っているのに、伸ばしている間に揺れています。「ロングトーン」でまっすぐ伸ばす練習がおすすめ。';
+  } else {
+    type = 'のびしろタイプ'; advice = '外れ方に大きな癖はなし。お手本をよく聴いてから歌うと、すぐスコアが伸びるはず！';
+  }
+
+  const bars = notes.map(n => {
+    const h = Math.max(4, Math.round(n.ratio * 56 / 4) * 4);
+    const c = n.ratio >= 0.6 ? '#8ff5b5' : 'rgba(255,255,255,.35)';
+    return `<div style="height:${h}px;background:${c};box-shadow:0 0 10px ${c}"><span>${noteName(n.m)}</span></div>`;
+  }).join('');
+
+  $('card').innerHTML = `
+    <div class="small">こえのすけ の しんだん けっか</div>
+    <div class="type">${type}</div>
+    <div class="score">${score}<span style="font-size:18px"> てん</span></div>
+    <div class="small">さいだいコンボ ${bestCombo} ／ へいきんのずれ ${meanDev >= 0 ? '+' : ''}${Math.round(meanDev)}</div>
+    <div class="advice">${advice}</div>
+    <div id="bars">${bars}</div>
+    <div class="btns">
+      <button class="primary" id="again">▶ もういちど</button>
+      <button id="free">じゆうに うたう</button>
+    </div>`;
+  $('overlay').style.display = 'flex';
+  blip(523, 0.1); setTimeout(() => blip(659, 0.1), 110); setTimeout(() => blip(784, 0.18), 220);
+  $('again').onclick = () => $('go').onclick();
+  $('free').onclick = () => { stopMusic(); $('overlay').style.display = 'none'; mode = 'free'; trail = []; };
+}
+
+// ===== 小道具 =====
+function avg(a) { return a.reduce((x, y) => x + y, 0) / a.length; }
+function std(a) { const m = avg(a); return Math.sqrt(avg(a.map(x => (x - m) ** 2))); }
+function spawnSparkle(x, y) {
+  const cs = ['#ffcf5a', '#ffffff', '#9ff0b8', '#ff9eb0'];
+  particles.push({ x: x + (Math.random() - .5) * 30, y: y - 10, vx: (Math.random() - .5) * 2.4, vy: -Math.random() * 2.2 - 0.6,
+    life: 1, c: cs[Math.floor(Math.random() * cs.length)] });
+}
+
+resize();
+})();
+</script>
+</body>
+</html>
