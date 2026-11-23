@@ -83,6 +83,8 @@
       </select>
       <div class="key">キー<button id="kDown">−</button><span id="kVal">0</span><button id="kUp">＋</button></div>
       <label class="tg"><input type="checkbox" id="guide" checked>お手本</label>
+      <label class="tg"><input type="checkbox" id="beat" checked>ビート</label>
+      <label class="tg"><input type="checkbox" id="accomp" checked>伴奏</label>
       <label class="tg"><input type="checkbox" id="lite">軽量</label>
       <button id="go" class="primary" disabled>▶ スタート</button>
     </div>
@@ -107,12 +109,13 @@
 // ===== 設定 =====
 const NOTE_NAMES = ['ド','ド#','レ','レ#','ミ','ファ','ファ#','ソ','ソ#','ラ','ラ#','シ'];
 const EXERCISES = {
-  scale: { name: 'ドレミ 上がって下がる', seq: [0,2,4,5,7,5,4,2,0], dur: 1.4 },
-  jump:  { name: 'とびとび（ド・ミ・ソ）', seq: [0,4,7,4,0,7,0],     dur: 1.4 },
-  high:  { name: '高音チャレンジ',         seq: [0,4,7,12,11,7,4,0], dur: 1.4 },
-  long:  { name: 'ロングトーン',           seq: [0,7,4,0],           dur: 2.6 },
+  scale: { name: 'ドレミ 上がって下がる', seq: [0,2,4,5,7,5,4,2,0], dur: 2 },
+  jump:  { name: 'とびとび（ド・ミ・ソ）', seq: [0,4,7,4,0,7,0],     dur: 2 },
+  high:  { name: '高音チャレンジ',         seq: [0,4,7,12,11,7,4,0], dur: 2 },
+  long:  { name: 'ロングトーン',           seq: [0,7,4,0],           dur: 4 },
 };
-const GUIDE_LEAD = 1.0, GUIDE_LEN = 0.6, GAP = 1.2;
+const BPM = 100, BEAT = 60 / BPM;              // テンポ（音の長さは拍で決める）
+const GUIDE_LEAD = 2 * BEAT, GUIDE_LEN = 0.9 * BEAT, GAP = 2 * BEAT;
 const GATE_RMS = 0.006;
 const SCROLL_PX = 150;       // 練習中のスクロール速度(CSS px/秒)
 const FREE_SCROLL = 45;      // 自由モードのスクロール速度
@@ -164,34 +167,37 @@ let keyShift = 0;
 $('kDown').onclick = () => { keyShift = Math.max(-6, keyShift - 1); $('kVal').textContent = keyShift; };
 $('kUp').onclick   = () => { keyShift = Math.min( 6, keyShift + 1); $('kVal').textContent = keyShift; };
 
-// ===== 32ドットのこえのすけ（ヘッドホン版） =====
+// ===== 32ドットのこえのすけ v3（ヘッドホン・前髪・服の一体感） =====
 const SPR_CACHE = {};
 function makeSprite32(face, walking) {
   const key = face + (walking ? 'w' : '');
   if (SPR_CACHE[key]) return SPR_CACHE[key];
   const cv2 = document.createElement('canvas'); cv2.width = cv2.height = 32;
   const x = cv2.getContext('2d');
-  const OUT = '#3b2a4a';
+  const OUT = '#3b2a4a', W = '#ffffff';
   const px = (i, j, col) => { if (i < 0 || j < 0 || i > 31 || j > 31) return; x.fillStyle = col; x.fillRect(i, j, 1, 1); };
   const rect = (i, j, w, h, col) => { x.fillStyle = col; x.fillRect(i, j, w, h); };
   const ell = (cx, cy, rx, ry) => (i, j) => { const dx = (i + 0.5 - cx) / rx, dy = (j + 0.5 - cy) / ry; return dx * dx + dy * dy <= 1; };
-  // 形を塗る：輪郭線＋左上から光が当たる4段階の陰影
-  function shade(inside, T, cx, cy, rx, ry) {
+  const tone = (T, d, i, j) => {
+    let col = d > 0.5 ? T[0] : d > -0.25 ? T[1] : d > -0.6 ? T[2] : T[3];
+    if (Math.abs(d - 0.5) < 0.07 && (i + j) % 2) col = T[1];
+    if (Math.abs(d + 0.25) < 0.07 && (i + j) % 2) col = T[2];
+    return col;
+  };
+  function shade(inside, T, cx, cy, rx, ry, outline = true) {
     for (let j = 0; j < 32; j++) for (let i = 0; i < 32; i++) {
       if (!inside(i, j)) continue;
-      if (!inside(i - 1, j) || !inside(i + 1, j) || !inside(i, j - 1) || !inside(i, j + 1)) { px(i, j, OUT); continue; }
-      const d = -0.6 * (i + 0.5 - cx) / rx - 0.8 * (j + 0.5 - cy) / ry;
-      let col = d > 0.5 ? T[0] : d > -0.25 ? T[1] : d > -0.6 ? T[2] : T[3];
-      if (Math.abs(d - 0.5) < 0.07 && (i + j) % 2) col = T[1];
-      if (Math.abs(d + 0.25) < 0.07 && (i + j) % 2) col = T[2];
-      px(i, j, col);
+      if (outline && (!inside(i - 1, j) || !inside(i + 1, j) || !inside(i, j - 1) || !inside(i, j + 1))) { px(i, j, OUT); continue; }
+      px(i, j, tone(T, -0.6 * (i + 0.5 - cx) / rx - 0.8 * (j + 0.5 - cy) / ry, i, j));
     }
   }
-  const SKIN = ['#fff4e6', '#ffe3c2', '#f6c9a2', '#e2a982'];
+  const SKIN  = ['#fff4e6', '#ffe3c2', '#f6c9a2', '#e2a982'];
   const SHIRT = ['#9cbcff', '#6a94ff', '#4a6fe0', '#3653b8'];
-  const PINK = ['#ffc2da', '#ff86b4', '#e2608f', '#b8456f'];
+  const PINK  = ['#ffc2da', '#ff86b4', '#e2608f', '#b8456f'];
+  const HAIR  = ['#c98a62', '#a0684a', '#7c4c38', '#5a3428'];
+  const BAND  = ['#cbbcff', '#9a82f5', '#7c62e0', '#5c45b8'];
 
-  // 足（くつ）
+  // 足
   const fo = walking ? 1 : 0;
   for (const [a, b] of [[10 + fo, 14 + fo], [17 - fo, 21 - fo]]) {
     for (let i = a; i <= b; i++) for (let j = 28; j <= 31; j++) {
@@ -200,60 +206,86 @@ function makeSprite32(face, walking) {
       px(i, j, edge ? OUT : (j === 29 ? '#7a5a8a' : '#5a3f6a'));
     }
   }
-  // 体（シャツ）と腕
-  for (const ax of [7.9, 24.1]) { const arm = ell(ax, 25.6, 2.7, 2.5); shade(arm, SKIN, ax, 25.6, 2.7, 2.5); }
-  const body = ell(16, 25.5, 7.5, 4.6);
-  shade(body, SHIRT, 16, 25.5, 7.5, 4.6);
-  // えり（白い襟）
-  for (const [i, j] of [[12,21],[13,21],[14,21],[13,22],[14,22],[18,21],[19,21],[20,21],[18,22],[17,22]]) px(i, j, '#ffffff');
-  px(15, 22, '#3653b8'); px(16, 22, '#3653b8'); px(15, 23, '#ffd36b'); px(16, 23, '#ffd36b');   // 胸もとの音符ボタン
-
+  // 腕（そで＋手）→ 体 の順に重ねて付け根を隠す
+  for (const [sx, hx] of [[8.6, 7.4], [23.4, 24.6]]) {
+    shade(ell(sx, 24.2, 2.8, 2.8), SHIRT, sx, 24.2, 2.8, 2.8);
+    shade(ell(hx, 26.6, 1.9, 1.7), SKIN, hx, 26.6, 1.9, 1.7);
+  }
+  const body = ell(16, 25, 8.2, 5.4);
+  shade(body, SHIRT, 16, 25, 8.2, 5.4);
   // 頭
-  const head = ell(16, 12.5, 12, 9.6);
-  shade(head, SKIN, 16, 12.5, 12, 9.6);
-  // つやのハイライト
-  rect(8, 7, 2, 1, '#ffffff'); rect(7, 8, 2, 1, '#ffffff'); px(10, 6, '#ffffff');
-
+  const head = ell(16, 12, 11.8, 9.8);
+  shade(head, SKIN, 16, 12, 11.8, 9.8);
+  // あごの下の影（頭と体をつなげる）
+  for (let i = 0; i < 32; i++) for (let j = 18; j < 28; j++) {
+    if (body(i, j) && !head(i, j) && head(i, j - 1) && body(i - 1, j) && body(i + 1, j)) { px(i, j, SHIRT[3]); if (body(i, j + 1)) px(i, j + 1, SHIRT[2]); }
+  }
+  // 襟（あごに沿って白い襟）
+  for (const [i, j] of [[10,21],[11,22],[12,22],[13,23],[14,23],[22,21],[21,22],[20,22],[19,23],[18,23]]) px(i, j, W);
+  for (const [i, j] of [[10,22],[11,23],[12,23],[13,24],[14,24],[22,22],[21,23],[20,23],[19,24],[18,24]]) px(i, j, '#c9d2f0');
+  // 胸の音符ボタン
+  px(16, 25, '#ffd36b'); px(16, 26, '#e0a83a'); px(16, 28, '#ffd36b');
+  // 前髪とサイドの髪
+  const hairLine = i => (i <= 6 || i >= 25) ? 15.5 : 6.8 + 1.6 * Math.abs(Math.sin((i - 3.5) * 0.62));
+  for (let j = 0; j < 32; j++) for (let i = 0; i < 32; i++) {
+    if (!head(i, j) || j > hairLine(i)) continue;
+    const onEdge = !head(i - 1, j) || !head(i + 1, j) || !head(i, j - 1);
+    if (onEdge) { px(i, j, OUT); continue; }
+    const tip = j + 1 > hairLine(i);
+    px(i, j, tip ? HAIR[3] : tone(HAIR, -0.6 * (i + 0.5 - 16) / 11.8 - 0.8 * (j + 0.5 - 12) / 9.8, i, j));
+  }
+  px(9, 4, '#e8b48e'); px(10, 4, '#e8b48e'); px(11, 5, '#e8b48e');            // 髪のつや
   // ヘッドバンド
-  const outer = ell(16, 12.5, 13.6, 11.8), inner = ell(16, 12.5, 11.4, 8.2);
+  const outer = ell(16, 12.6, 13.9, 12.4), inner = ell(16, 12.6, 12.1, 10.0);
   const band = (i, j) => j <= 9 && outer(i, j) && !inner(i, j);
   for (let j = 0; j <= 9; j++) for (let i = 0; i < 32; i++) {
     if (!band(i, j)) continue;
-    const edge = !band(i, j - 1) || !band(i, j + 1) || !band(i - 1, j) || !band(i + 1, j);
-    const atBottom = j === 9 || (!band(i, j + 1) && !inner(i, j + 1));
-    px(i, j, (edge && !atBottom) ? OUT : (j <= 2 ? '#c9b8ff' : j <= 5 ? '#9a82f5' : '#7c62e0'));
+    const edge = !band(i, j - 1) || !band(i - 1, j) || !band(i + 1, j) || (!band(i, j + 1) && j < 8 && !outer(i, j + 1));
+    px(i, j, edge ? OUT : (j <= 1 ? BAND[0] : BAND[1]));
   }
-  // イヤーカップ（左右）
-  for (const cx of [3.5, 28.5]) {
-    const cup = ell(cx, 13, 3.6, 5.2);
-    shade(cup, PINK, cx - 1, 11, 3.6, 5.2);
-    const pad = ell(cx < 16 ? cx + 2.2 : cx - 2.2, 13, 1.2, 4.2);
-    for (let j = 8; j <= 18; j++) for (let i = 0; i < 32; i++) if (pad(i, j) && cup(i, j) && head(i, j) === false) px(i, j, '#8a3a62');
-    px(Math.round(cx) - 1, 10, '#ffffff');
+  
+  // 音符のアホ毛（バンドの上にぴょこん）
+  for (let j = 0; j <= 2; j++) px(18, j, '#ff6f91');
+  px(19, 0, '#ff6f91'); px(20, 1, '#ff6f91'); px(17, 2, '#ff6f91'); px(17, 3, '#e0507a'); px(18, 3, '#e0507a');
+  // イヤーカップ
+  for (const cx of [3.4, 28.6]) {
+    const cup = ell(cx, 13.2, 3.5, 5.3);
+    shade(cup, PINK, cx - 1, 11, 3.5, 5.3);
+    const padX = cx < 16 ? 6 : 25;
+    for (let j = 9; j <= 17; j++) if (cup(padX, j) && !cup(padX + (cx < 16 ? 1 : -1), j) === false) px(padX, j, '#8a3a62');
+    px(Math.round(cx) - 1, 10, W); px(Math.round(cx) - 1, 11, PINK[0]);
   }
-
   // ほっぺ
-  for (const ox of [6, 22]) { rect(ox, 15, 4, 2, '#ff9eb0'); px(ox, 15, '#ffc4d0'); }
+  for (const ox of [5, 23]) { rect(ox, 17, 4, 2, '#ff9eb0'); px(ox, 17, '#ffc4d0'); }
   // 顔
-  const MOUTH = '#c2414f', TONGUE = '#ff8fa3', W = '#ffffff';
-  const eyes = (o = 0) => { rect(10, 11 + o, 2, 3, OUT); rect(20, 11 + o, 2, 3, OUT); px(10, 11 + o, W); px(20, 11 + o, W); };
+  const MOUTH = '#c2414f', TONGUE = '#ff8fa3', SHINE = '#5d4c8c';
+  const eyes = (o = 0) => {
+    for (const ex of [9, 20]) { rect(ex, 12 + o, 3, 4, OUT); px(ex, 12 + o, W); px(ex + 1, 12 + o, W); px(ex + 2, 14 + o, SHINE); px(ex + 1, 15 + o, '#5a4a8a'); }
+  };
   switch (face) {
-    case 'blink': rect(9, 13, 4, 1, OUT); rect(19, 13, 4, 1, OUT); rect(15, 17, 2, 1, OUT); break;
-    case 'sleep': rect(9, 13, 4, 1, OUT); rect(19, 13, 4, 1, OUT); rect(15, 17, 2, 1, OUT); break;
+    case 'blink':
+      for (const ex of [9, 20]) { px(ex, 14, OUT); px(ex + 1, 15, OUT); px(ex + 2, 14, OUT); }
+      px(15, 19, OUT); px(16, 19, OUT); break;
+    case 'sleep':
+      for (const ex of [9, 20]) rect(ex, 15, 3, 1, OUT);
+      px(15, 19, OUT); px(16, 19, OUT); break;
     case 'happy':
-      for (const o of [9, 19]) { px(o, 13, OUT); px(o + 1, 12, OUT); px(o + 2, 12, OUT); px(o + 3, 13, OUT); }
-      rect(14, 16, 4, 1, OUT); rect(14, 17, 4, 1, MOUTH); rect(15, 18, 2, 1, TONGUE); px(14, 18, OUT); px(17, 18, OUT); rect(15, 19, 2, 1, OUT);
-      px(13, 16, OUT); px(18, 16, OUT); break;
+      for (const ex of [9, 20]) { px(ex, 15, OUT); px(ex + 1, 14, OUT); px(ex + 2, 15, OUT); px(ex + 1, 13, OUT); }
+      rect(14, 18, 4, 1, OUT); rect(14, 19, 4, 1, MOUTH); rect(15, 20, 2, 1, TONGUE);
+      px(13, 18, OUT); px(18, 18, OUT); px(13, 19, OUT); px(18, 19, OUT); px(14, 20, OUT); px(17, 20, OUT); rect(15, 21, 2, 1, OUT); break;
     case 'high':
-      rect(9, 10, 3, 3, OUT); rect(20, 10, 3, 3, OUT); px(9, 10, W); px(20, 10, W);
-      rect(15, 16, 2, 1, OUT); rect(14, 17, 4, 2, MOUTH); rect(15, 19, 2, 1, OUT); px(13, 17, OUT); px(13, 18, OUT); px(18, 17, OUT); px(18, 18, OUT); break;
+      for (const ex of [9, 20]) { rect(ex, 11, 3, 5, OUT); px(ex, 11, W); px(ex + 1, 11, W); px(ex, 12, W); px(ex + 2, 14, SHINE); }
+      rect(15, 18, 2, 1, OUT); rect(15, 19, 2, 2, MOUTH); px(14, 19, OUT); px(17, 19, OUT); px(14, 20, OUT); px(17, 20, OUT); rect(15, 21, 2, 1, OUT); break;
     case 'low':
-      eyes(1); px(9, 10, OUT); px(10, 9, OUT); px(11, 9, OUT); px(20, 9, OUT); px(21, 9, OUT); px(22, 10, OUT);
-      px(13, 18, OUT); px(14, 17, OUT); px(15, 18, OUT); px(16, 17, OUT); px(17, 18, OUT); px(18, 17, OUT); break;
+      eyes(1);
+      px(9, 11, OUT); px(10, 11, OUT); px(11, 10, OUT); px(20, 10, OUT); px(21, 11, OUT); px(22, 11, OUT);
+      px(13, 20, OUT); px(14, 19, OUT); px(15, 20, OUT); px(16, 19, OUT); px(17, 20, OUT); px(18, 19, OUT); break;
     case 'sing':
-      eyes(); rect(15, 16, 2, 1, OUT); rect(14, 17, 4, 1, MOUTH); rect(15, 18, 2, 1, TONGUE); px(14, 18, OUT); px(17, 18, OUT); rect(15, 19, 2, 1, OUT);
-      px(13, 17, OUT); px(18, 17, OUT); break;
-    default: eyes(); px(14, 17, OUT); rect(15, 18, 2, 1, OUT); px(17, 17, OUT);
+      eyes();
+      rect(15, 18, 2, 1, OUT); rect(14, 19, 4, 1, MOUTH); rect(15, 20, 2, 1, TONGUE);
+      px(13, 19, OUT); px(18, 19, OUT); px(14, 20, OUT); px(17, 20, OUT); rect(15, 21, 2, 1, OUT); break;
+    default:
+      eyes(); px(14, 19, OUT); px(15, 20, OUT); px(16, 20, OUT); px(17, 19, OUT);
   }
   SPR_CACHE[key] = cv2;
   return cv2;
@@ -370,10 +402,10 @@ function buildExercise() {
   const base = parseInt($('voice').value, 10) + keyShift;
   tol = parseInt($('level').value, 10);
   notes = [];
-  let t = 2.0;
+  let t = 4 * BEAT;                       // 1小節のカウントイン
   for (const step of ex.seq) {
-    notes.push({ m: base + step, start: t, dur: ex.dur, samples: [], done: false, ratio: 0 });
-    t += ex.dur + GAP;
+    notes.push({ m: base + step, step, start: t, dur: ex.dur * BEAT, samples: [], done: false, ratio: 0 });
+    t += ex.dur * BEAT + GAP;
   }
   endTime = t - GAP + 0.6;
 }
@@ -382,8 +414,8 @@ function playGuide(m, when) {
   osc.type = 'square';                       // ファミコンっぽい矩形波
   osc.frequency.value = 440 * Math.pow(2, (m - 69) / 12);
   g.gain.setValueAtTime(0, when);
-  g.gain.linearRampToValueAtTime(0.08, when + 0.02);
-  g.gain.setValueAtTime(0.08, when + GUIDE_LEN - 0.1);
+  g.gain.linearRampToValueAtTime(0.1, when + 0.02);
+  g.gain.setValueAtTime(0.1, when + GUIDE_LEN - 0.1);
   g.gain.linearRampToValueAtTime(0, when + GUIDE_LEN);
   osc.connect(g).connect(ac.destination);
   osc.start(when); osc.stop(when + GUIDE_LEN + 0.05);
@@ -401,6 +433,73 @@ function blip(freq, len = 0.08, vol = 0.05) {      // 効果音
   osc.start(now); osc.stop(now + len + 0.02);
 }
 
+
+// ===== ファミコン風の音源：ドラム（ノイズ）＋伴奏（三角波ベース・矩形波アルペジオ） =====
+let noiseBuf = null, pulse25 = null, musicNodes = [], musicOut = null;
+const mf = m => 440 * Math.pow(2, (m - 69) / 12);
+function initSynth() {
+  if (noiseBuf) return;
+  noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  let v = 0;
+  for (let i = 0; i < d.length; i++) { if (i % 2 === 0) v = Math.random() * 2 - 1; d[i] = v; }   // 粗いノイズ（昔のゲーム機っぽく）
+  const n = 32, re = new Float32Array(n), im = new Float32Array(n);
+  for (let k = 1; k < n; k++) re[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * 0.25);
+  pulse25 = ac.createPeriodicWave(re, im);
+}
+function stopMusic() {
+  for (const nd of musicNodes) { try { nd.stop(); } catch (e) {} }
+  musicNodes = [];
+  if (musicOut) { try { musicOut.disconnect(); } catch (e) {} musicOut = null; }
+}
+function env(g, t, vol, len) { g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + len); }
+function synthTone(wave, freq, t, len, vol) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  if (typeof wave === 'string') o.type = wave; else o.setPeriodicWave(wave);
+  o.frequency.setValueAtTime(freq, t);
+  env(g, t, vol, len);
+  o.connect(g).connect(musicOut); o.start(t); o.stop(t + len + 0.02); musicNodes.push(o);
+}
+function noiseHit(t, len, vol, type, freq, q = 0.8) {
+  const s2 = ac.createBufferSource(); s2.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = ac.createGain(); env(g, t, vol, len);
+  s2.connect(f).connect(g).connect(musicOut); s2.start(t, Math.random() * 0.5); s2.stop(t + len + 0.02); musicNodes.push(s2);
+}
+function kick(t) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'triangle'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+  env(g, t, 0.55, 0.16);
+  o.connect(g).connect(musicOut); o.start(t); o.stop(t + 0.2); musicNodes.push(o);
+}
+// 練習の音に合う和音（移動ドの度数 → I・IV・Vのどれか）
+const chordRoot = step => ({ 0: 0, 2: 7, 4: 0, 5: 5, 7: 0, 9: 5, 11: 7 })[((step % 12) + 12) % 12] ?? 0;
+function scheduleMusic(acT0) {
+  stopMusic(); initSynth();
+  musicOut = ac.createGain(); musicOut.gain.value = 0.9; musicOut.connect(ac.destination);
+  const tonic = tonicMidi(), beats = Math.ceil(endTime / BEAT);
+  const useBeat = $('beat').checked, useAcc = $('accomp').checked;
+  const chordAt = t => { for (const n of notes) if (t >= n.start - GAP - 1e-6 && t < n.start + n.dur) return chordRoot(n.step); return 0; };
+  for (let b = 0; b < beats; b++) {
+    const tb = b * BEAT, t = acT0 + tb;
+    const countIn = tb < notes[0].start - 1e-6;
+    if (useBeat) {
+      if (countIn) { noiseHit(t, 0.04, b === 0 ? 0.22 : 0.14, 'highpass', 6000); }
+      else {
+        if (b % 2 === 0) kick(t); else noiseHit(t, 0.13, 0.22, 'bandpass', 1800);
+        noiseHit(t, 0.03, 0.08, 'highpass', 7000); noiseHit(t + BEAT / 2, 0.03, 0.06, 'highpass', 7000);
+      }
+    }
+    if (useAcc && !countIn) {
+      const root = chordAt(tb);
+      const tri = [0, 4, 7].map(v => tonic + root + v);
+      synthTone('triangle', mf(tonic - 12 + root), t, BEAT * 0.45, 0.22);                    // ベース
+      const arp = [tri[0], tri[1], tri[2], tri[1]];
+      for (let k = 0; k < 2; k++) synthTone(pulse25, mf(arp[(b * 2 + k) % 4] + 12), t + k * BEAT / 2, BEAT * 0.4, 0.035);   // アルペジオ
+    }
+  }
+}
+
 $('go').onclick = () => {
   if (!ac) return;
   ac.resume();
@@ -410,6 +509,7 @@ $('go').onclick = () => {
   t0 = performance.now() / 1000;
   const acT0 = ac.currentTime;
   if ($('guide').checked) for (const n of notes) playGuide(n.m, acT0 + n.start - GUIDE_LEAD);
+  scheduleMusic(acT0);
   mode = 'exercise';
   $('go').disabled = true;
 };
@@ -589,7 +689,8 @@ function draw(lo, hi, charX, t, active, expr) {
   // キャラ
   const scale = P;
   const sx = snap(charX - 8 * scale);
-  const bob = (expr === 'sing' || expr === 'happy') && Math.floor(animT * 6) % 2 ? -P : 0;
+  const beatPh = mode === 'exercise' ? ((t / BEAT) % 1 + 1) % 1 : 1;
+  const bob = (beatPh < 0.18 ? -P : 0) + ((expr === 'sing' || expr === 'happy') && mode !== 'exercise' && Math.floor(animT * 6) % 2 ? -P : 0);
   const sy = snap(charY - 9 * scale - jump * P * 5) + bob;
   const walking = (mode === 'exercise' || curMidi !== null) && Math.floor(animT * 6) % 2 === 1;
   const auraCol = { happy:'rgba(143,245,181,', low:'rgba(143,200,255,', high:'rgba(255,200,110,' }[expr] || 'rgba(255,230,200,';
@@ -973,7 +1074,7 @@ function showResult() {
   $('overlay').style.display = 'flex';
   blip(523, 0.1); setTimeout(() => blip(659, 0.1), 110); setTimeout(() => blip(784, 0.18), 220);
   $('again').onclick = () => $('go').onclick();
-  $('free').onclick = () => { $('overlay').style.display = 'none'; mode = 'free'; trail = []; };
+  $('free').onclick = () => { stopMusic(); $('overlay').style.display = 'none'; mode = 'free'; trail = []; };
 }
 
 // ===== 小道具 =====
