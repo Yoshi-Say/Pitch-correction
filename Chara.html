@@ -16,13 +16,14 @@
   html,body{margin:0;height:100%;overflow:hidden;background:var(--panel);color:var(--text);
     font-family:"DotGothic16",ui-monospace,monospace}
   #wrap{position:fixed;inset:0;display:flex;flex-direction:column}
-  header{padding:8px 10px 7px;background:var(--panel);border-bottom:4px solid var(--ink)}
-  .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-  .row+.row{margin-top:6px}
-  h1{font-size:18px;margin:0 6px 0 0;color:var(--accent);letter-spacing:.08em;font-weight:normal;
+  header{padding:6px 8px 6px;background:var(--panel);border-bottom:4px solid var(--ink)}
+  .row{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+  .row+.row{margin-top:5px}
+  h1{font-size:15px;margin:0 4px 0 0;color:var(--accent);letter-spacing:.06em;font-weight:normal;
     text-shadow:2px 2px 0 var(--ink)}
-  select,button{font-family:inherit;font-size:14px;border-radius:0;padding:6px 9px;color:var(--ink);
-    background:var(--paper);border:3px solid var(--ink);box-shadow:3px 3px 0 #000}
+  select,button{font-family:inherit;font-size:12px;border-radius:0;padding:4px 6px;color:var(--ink);
+    background:var(--paper);border:2px solid var(--ink);box-shadow:2px 2px 0 #000;max-width:100%}
+  #ex{max-width:46vw}
   button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #000}
   button.primary{background:var(--accent)}
   button:disabled{opacity:.45}
@@ -332,7 +333,12 @@ function yOf(m, lo, hi) {
 const snap = v => Math.round(v / P) * P;
 function foldInto(m, lo, hi) { while (m > hi + 0.5) m -= 12; while (m < lo - 0.5) m += 12; return m; }
 function foldCents(c) { while (c > 600) c -= 1200; while (c < -600) c += 1200; return c; }
-const noteName = m => NOTE_NAMES[((Math.round(m) % 12) + 12) % 12];
+// 移動ド：選んだ声の高さ＋キーを「ド」とする
+function tonicMidi() { return parseInt($('voice').value, 10) + keyShift; }
+const relOf = m => (((Math.round(m) - tonicMidi()) % 12) + 12) % 12;
+const noteName = m => NOTE_NAMES[relOf(m)];
+const isWhite = rel => [0,2,4,5,7,9,11].includes(rel);
+const KW = () => P * 11;   // 左の鍵盤の幅
 
 // ===== メインループ =====
 function loop() {
@@ -397,7 +403,7 @@ function loop() {
 
   // --- ヒント ---
   let hint = '';
-  if (mode === 'free') hint = curMidi !== null ? `いまの声：${noteName(curMidi)}` : '声を出すと こえのすけ が進むよ（「あー」でOK）';
+  if (mode === 'free') hint = curMidi !== null ? `いまの声：${noteName(curMidi)}` : 'ピンクの線が きじゅんの「ド」。声を出すと進むよ';
   else if (mode === 'exercise') {
     if (t < notes[0].start - GUIDE_LEAD) hint = 'READY…';
     else if (active && dev === null) hint = curRms < GATE_RMS ? '声を出して！' : '…';
@@ -412,16 +418,24 @@ function loop() {
 function draw(lo, hi, charX, t, active, expr) {
   drawBackground();
 
-  // 音の段（点線）
-  ctx.font = `${P * 4}px ${FONT}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  // 音の段：基準のドは太いピンクの線、ほかのドレミは点線
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
   for (let m = Math.ceil(lo); m <= Math.floor(hi); m++) {
-    const pc = ((m % 12) + 12) % 12;
-    if (![0,2,4,5,7,9,11].includes(pc)) continue;
+    const rel = relOf(m);
+    if (!isWhite(rel)) continue;
     const y = snap(yOf(m, lo, hi));
-    ctx.fillStyle = pc === 0 ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.14)';
-    for (let x = P * 10; x < W; x += P * 4) ctx.fillRect(x, y, P, P);
-    ctx.fillStyle = 'rgba(255,255,255,.6)';
-    ctx.fillText(NOTE_NAMES[pc], P * 2, y + 1);
+    if (rel === 0) {
+      ctx.fillStyle = 'rgba(255,111,145,.25)'; ctx.fillRect(KW(), y - P * 2, W - KW(), P * 5);
+      ctx.fillStyle = '#ff6f91';               ctx.fillRect(KW(), y, W - KW(), P);
+      ctx.font = `${P * 5}px ${FONT}`;
+      ctx.fillStyle = INK; ctx.fillText('ド', KW() + P * 3, y - P * 3);
+      ctx.fillStyle = '#ffd0dc'; ctx.fillText('ド', KW() + P * 2, y - P * 4);
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,.16)';
+      for (let x = KW() + P * 2; x < W; x += P * 4) ctx.fillRect(x, y, P, P);
+      ctx.font = `${P * 4}px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillText(NOTE_NAMES[rel], KW() + P * 2, y - P * 3);
+    }
   }
 
   // 雲の足場
@@ -489,6 +503,9 @@ function draw(lo, hi, charX, t, active, expr) {
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
   popups = popups.filter(p => p.life > 0);
 
+  // 左の鍵盤（最前面）
+  drawKeyboard(lo, hi, active);
+
   // スコア風の表示
   if (mode === 'exercise') {
     ctx.font = `${P * 5}px ${FONT}`; ctx.textAlign = 'right';
@@ -527,6 +544,38 @@ function drawBackground() {
   }
   ctx.fillStyle = '#7bd389';
   for (let x = -off * P; x < W; x += P * 8) ctx.fillRect(x + P * 2, gy - P, P, P);
+}
+function drawKeyboard(lo, hi, active) {
+  const kw = KW(), skyBottom = H - groundH();
+  const blackW = snap(kw * 0.6);
+  const cur = curMidi !== null ? Math.round(foldInto(curMidi, lo, hi)) : null;
+  const tgt = active ? active.m : null;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, kw + P, skyBottom); ctx.clip();
+  ctx.fillStyle = INK; ctx.fillRect(0, 0, kw + P, skyBottom);
+  for (let m = Math.floor(lo) - 1; m <= Math.ceil(hi) + 1; m++) {
+    const rel = relOf(m);
+    const yTop = snap(yOf(m + 0.5, lo, hi)), yBot = snap(yOf(m - 0.5, lo, hi));
+    const h = yBot - yTop;
+    if (h <= 0) continue;
+    // 白い部分（黒鍵の段も右側は白鍵の続き）
+    let white = '#fff6e9';
+    if (rel === 0) white = '#ffc2d2';                    // 基準のド
+    if (m === tgt) white = '#c9d6ff';                    // いま狙う音
+    if (m === cur && isWhite(rel)) white = '#ffcf5a';    // いまの声
+    ctx.fillStyle = white; ctx.fillRect(0, yTop, kw, h);
+    if (!isWhite(rel)) {
+      ctx.fillStyle = m === cur ? '#ffcf5a' : (m === tgt ? '#7e8bd1' : '#2a1f3d');
+      ctx.fillRect(0, yTop + P, blackW, Math.max(P, h - P * 2));
+    }
+    // 白鍵どうしの区切り線
+    const relBelow = relOf(m - 1);
+    if (isWhite(rel) && isWhite(relBelow)) { ctx.fillStyle = INK; ctx.fillRect(0, yBot - P, kw, P); }
+    else if (!isWhite(rel)) { ctx.fillStyle = INK; ctx.fillRect(blackW, yTop + Math.floor(h / 2 / P) * P, kw - blackW, P); }
+  }
+  // 鍵盤の縁
+  ctx.fillStyle = INK; ctx.fillRect(kw, 0, P, skyBottom);
+  ctx.restore();
 }
 function drawHills(arr, offset, color, gH, colW) {
   ctx.fillStyle = color;
