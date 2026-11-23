@@ -117,7 +117,7 @@ const EXERCISES = {
 };
 const BPM = 100, BEAT = 60 / BPM;              // テンポ（音の長さは拍で決める）
 const GUIDE_LEAD = 2 * BEAT, GUIDE_LEN = 0.9 * BEAT, GAP = 2 * BEAT;
-const GATE_MIN = { high: 0.006, mid: 0.012, low: 0.022 };   // 感度ごとの最低ライン
+const GATE_MIN = { high: 0.002, mid: 0.004, low: 0.01 };   // 感度ごとの最低ライン
 let noiseFloor = 0.003, gateNow = 0.012;              // 周りの雑音の大きさを常に学習して、しきい値を自動で上げ下げ
 const SCROLL_PX = 150;       // 練習中のスクロール速度(CSS px/秒)
 const FREE_SCROLL = 45;      // 自由モードのスクロール速度
@@ -362,9 +362,10 @@ function detectPitch() {
   rms = Math.sqrt(rms / N);
   curRms = rms;
   // 雑音レベルの学習（声が出ていないときの音量を、ゆっくり追いかける）
-  if (rms < gateNow) noiseFloor = noiseFloor * 0.97 + rms * 0.03;
-  else noiseFloor = noiseFloor * 0.999 + Math.min(rms, noiseFloor * 2) * 0.001;
-  gateNow = Math.max(GATE_MIN[$('sens').value] || 0.012, noiseFloor * 3.5);
+  // 静かになったらすぐ下げ、上げるのは数十秒かけてゆっくり（歌い続けても声を雑音と勘違いしない）
+  if (rms < noiseFloor) noiseFloor = noiseFloor * 0.9 + rms * 0.1;
+  else noiseFloor = Math.min(0.01, noiseFloor * 0.9995 + rms * 0.0005);
+  gateNow = Math.max(GATE_MIN[$('sens').value] || 0.004, noiseFloor * 2.5);
   if (rms < gateNow) return null;
   const Wn = N / 2;
   const tMax = Math.min(Wn - 2, Math.floor(sr / 75));    // 人の声の範囲（約75〜1000Hz）だけを見る
@@ -380,9 +381,9 @@ function detectPitch() {
   }
   let tau = -1;
   for (let t = tMin; t <= tMax; t++) {
-    if (d[t] < 0.1) { while (t + 1 <= tMax && d[t + 1] < d[t]) t++; tau = t; break; }
+    if (d[t] < 0.3) { while (t + 1 <= tMax && d[t + 1] < d[t]) t++; tau = t; break; }
   }
-  if (tau < 0 || d[tau] > 0.08) return null;              // 「音程のはっきりした音」だけを声とみなす
+  if (tau < 0) return null;                                // 息まじりの声も拾えるよう基準はゆるめ（雑音は下の「続いているか」で除外）
   const x0 = d[tau - 1], x1 = d[tau], x2 = tau + 1 <= tMax ? d[tau + 1] : x1;
   const den = x0 + x2 - 2 * x1;
   const better = den ? tau + (x0 - x2) / (2 * den) : tau;
@@ -392,11 +393,11 @@ function smoothMidi(m) {
   hist.push(m);
   if (hist.length > 7) hist.shift();
   const v = hist.filter(x => x !== null);
-  if (v.length < 5) return null;                            // 一瞬の音ではなく、続いている声だけ
+  if (v.length < 4) return null;                            // 一瞬の音ではなく、続いている声だけ
   const s = [...v].sort((a, b) => a - b);
   let med = s[Math.floor(s.length / 2)];
   const steady = v.filter(x => Math.abs(x - med) < 1 || Math.abs(Math.abs(x - med) - 12) < 1).length;
-  if (steady < 4) return null;                              // 高さがバラバラな音（物音・息）は無視
+  if (steady < 3) return null;                              // 高さがバラバラな音（物音・息）は無視
   if (curMidi !== null) {
     const diff = med - curMidi;
     if (Math.abs(Math.abs(diff) - 12) < 0.6) med -= 12 * Math.sign(diff);
@@ -741,6 +742,17 @@ function draw(lo, hi, charX, t, active, expr) {
   // 左の鍵盤（最前面）
   drawKeyboard(lo, hi, active);
 
+  // マイクの入力レベル（緑＝声として聞こえている、灰色の線＝反応しはじめる大きさ）
+  {
+    const mw = P * 20, mh = P * 2, mx = W - mw - P * 3, my = mode === 'exercise' ? P * 10 : P * 3;
+    const lv = Math.min(1, Math.sqrt(curRms / 0.08)), gv = Math.min(1, Math.sqrt(gateNow / 0.08));
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(mx - P, my - P, mw + 2 * P, mh + 2 * P);
+    ctx.fillStyle = curMidi !== null ? '#8ff5b5' : (curRms > gateNow ? '#ffcf5a' : '#8a7fa8');
+    ctx.fillRect(mx, my, mw * lv, mh);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(mx + mw * gv, my - P, Math.max(1, P / 2), mh + 2 * P);
+    ctx.font = `${P * 3}px ${FONT}`; ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,.75)';
+    ctx.fillText('MIC', mx - P * 2, my + mh / 2 + 1); ctx.textAlign = 'left';
+  }
   // スコア風の表示
   if (mode === 'exercise') {
     ctx.font = `${P * 5}px ${FONT}`; ctx.textAlign = 'right';
