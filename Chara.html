@@ -323,7 +323,7 @@ $('go').onclick = () => {
 };
 
 // ===== 座標 =====
-function groundH() { return Math.max(P * 8, Math.round(H * 0.16 / P) * P); }
+function groundH() { return P * 9; }
 function viewRange() {
   if (mode === 'exercise' || mode === 'result') {
     const ms = notes.map(n => n.m);
@@ -506,7 +506,7 @@ function draw(lo, hi, charX, t, active, expr) {
   ag.addColorStop(0, auraCol + '.45)'); ag.addColorStop(1, auraCol + '0)');
   ctx.fillStyle = ag; ctx.fillRect(sx + 8 * scale - ar, sy + 9 * scale - ar, ar * 2, ar * 2);
   // 床に落ちる影（高く飛ぶほど小さく薄く）
-  const floorY = H - groundH() * 0.45;
+  const floorY = H - groundH() + P * 2;
   const hgt = Math.max(0, floorY - (sy + 16 * scale));
   const ssc = Math.max(0.25, 1 - hgt / (H * 0.9));
   ctx.fillStyle = `rgba(20,0,30,${0.45 * ssc})`;
@@ -602,34 +602,29 @@ function drawBackground() {
       const sway = Math.sin(animT * 0.3 + i * 2) * 25;
       const x0 = W * (0.15 + i * 0.3) + sway, bw = 40 + i * 25;
       const lg = ctx.createLinearGradient(0, 0, 0, skyH);
-      lg.addColorStop(0, 'rgba(255,220,190,.10)'); lg.addColorStop(1, 'rgba(255,220,190,0)');
+      lg.addColorStop(0, 'rgba(255,220,190,.05)'); lg.addColorStop(1, 'rgba(255,220,190,0)');
       ctx.fillStyle = lg;
       ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0 + bw, 0);
       ctx.lineTo(x0 + bw + skyH * 0.45, skyH); ctx.lineTo(x0 + skyH * 0.45, skyH); ctx.closePath(); ctx.fill();
     }
     ctx.restore();
   }
-  // 奥行きのある床（遠近感のある市松模様）
-  const top = skyH, vpX = W * 0.55, k = 0.55, tw = P * 18, N = 7;
-  const sc = y => k + (1 - k) * ((y - top) / gH);
-  const off = scrollX % (tw * 2);
-  for (let i = 0; i < N; i++) {
-    const yA = top + gH * Math.pow(i / N, 1.5), yB = top + gH * Math.pow((i + 1) / N, 1.5);
-    const shade = 0.55 + 0.45 * (i / N);
-    for (let j = -3; j * tw - off < W * 1.8; j++) {
-      const xb0 = j * tw - off, xb1 = xb0 + tw;
-      const a0 = vpX + (xb0 - vpX) * sc(yA), a1 = vpX + (xb1 - vpX) * sc(yA);
-      const b0 = vpX + (xb0 - vpX) * sc(yB), b1 = vpX + (xb1 - vpX) * sc(yB);
-      const even = ((j % 2) + 2) % 2 === i % 2;
-      const r = even ? 111 : 82, gg = even ? 208 : 176, b = even ? 138 : 112;
-      ctx.fillStyle = `rgb(${Math.round(r * shade)},${Math.round(gg * shade)},${Math.round(b * shade)})`;
-      ctx.beginPath(); ctx.moveTo(a0, yA); ctx.lineTo(a1, yA); ctx.lineTo(b1, yB + 0.5); ctx.lineTo(b0, yB + 0.5); ctx.closePath(); ctx.fill();
-    }
-  }
-  // 床の奥を霧で溶かす
-  const fg = ctx.createLinearGradient(0, top, 0, top + gH * 0.5);
-  fg.addColorStop(0, 'rgba(255,170,150,.55)'); fg.addColorStop(1, 'rgba(255,170,150,0)');
-  ctx.fillStyle = fg; ctx.fillRect(0, top, W, gH * 0.5);
+  // 地面（ドット）＋奥から手前への陰影
+  const gy = H - gH;
+  ctx.fillStyle = '#6fd08a'; ctx.fillRect(0, gy, W, P * 2);
+  ctx.fillStyle = '#3f9e63'; ctx.fillRect(0, gy + P * 2, W, P);
+  const gg = ctx.createLinearGradient(0, gy + P * 3, 0, H);
+  gg.addColorStop(0, '#9a6a4c'); gg.addColorStop(1, '#3e2626');
+  ctx.fillStyle = gg; ctx.fillRect(0, gy + P * 3, W, gH - P * 3);
+  const off = Math.floor(scrollX / P) % 8;
+  ctx.fillStyle = 'rgba(60,30,20,.35)';
+  for (let x = -off * P; x < W; x += P * 8) { ctx.fillRect(x, gy + P * 5, P, P); ctx.fillRect(x + P * 4, gy + P * 7, P, P); }
+  ctx.fillStyle = '#6fd08a';
+  for (let x = -off * P; x < W; x += P * 8) ctx.fillRect(x + P * 2, gy - P, P, P);
+  // 地平線の光
+  const hz = ctx.createLinearGradient(0, gy - P * 10, 0, gy);
+  hz.addColorStop(0, 'rgba(255,200,170,0)'); hz.addColorStop(1, 'rgba(255,200,170,.25)');
+  ctx.fillStyle = hz; ctx.fillRect(0, gy - P * 10, W, P * 10);
 }
 const motes = Array.from({ length: 26 }, () => ({ x: Math.random(), y: Math.random(), s: Math.random() }));
 function drawPost() {
@@ -644,17 +639,9 @@ function drawPost() {
     ctx.beginPath(); ctx.arc(m.x * W, m.y * (H - groundH()), 1 + m.s * 1.5, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
-  // 手前を横切る大きなボケ（ピンぼけの前景）
-  for (let i = 0; i < 2; i++) {
-    const bx = ((W * (0.3 + i * 0.6) - scrollX * 1.6) % (W + 240) + W + 240) % (W + 240) - 120;
-    const by = H - groundH() * (0.35 + i * 0.25), r = 70 + i * 30;
-    const rg = ctx.createRadialGradient(bx, by, 0, bx, by, r);
-    rg.addColorStop(0, 'rgba(40,90,60,.55)'); rg.addColorStop(0.6, 'rgba(40,90,60,.25)'); rg.addColorStop(1, 'rgba(40,90,60,0)');
-    ctx.fillStyle = rg; ctx.fillRect(bx - r, by - r, r * 2, r * 2);
-  }
   // ビネット（四隅を暗く）
   const vg = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.35, W / 2, H * 0.45, Math.max(W, H) * 0.75);
-  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(10,0,20,.55)');
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(10,0,20,.3)');
   ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
 }
 function drawKeyboard(lo, hi, active) {
@@ -676,9 +663,15 @@ function drawKeyboard(lo, hi, active) {
     if (m === tgt) white = '#c9d6ff';                    // いま狙う音
     if (m === cur && isWhite(rel)) white = '#ffcf5a';    // いまの声
     ctx.fillStyle = white; ctx.fillRect(0, yTop, kw, h);
+    // 白鍵の右端に影、上端にハイライト
+    ctx.fillStyle = 'rgba(60,30,80,.18)'; ctx.fillRect(kw - P * 2, yTop, P * 2, h);
+    ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(0, yTop, kw - P * 2, 1);
     if (!isWhite(rel)) {
+      const bh = Math.max(P, h - P * 2);
+      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(P, yTop + P * 2, blackW, bh);          // 黒鍵の落とす影
       ctx.fillStyle = m === cur ? '#ffcf5a' : (m === tgt ? '#7e8bd1' : '#2a1f3d');
-      ctx.fillRect(0, yTop + P, blackW, Math.max(P, h - P * 2));
+      ctx.fillRect(0, yTop + P, blackW, bh);
+      ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(0, yTop + P, blackW - P, P);      // 黒鍵の上面の光
     }
     // 白鍵どうしの区切り線
     const relBelow = relOf(m - 1);
@@ -700,7 +693,7 @@ function drawHills(arr, offset, color, gH, colW) {
 }
 function drawCloud(x, y, w, h, base, light, dark) {
   // 厚みのある雲ブロック（上面・側面・正面）
-  const d = P * 4;
+  const d = P * 2;
   ctx.fillStyle = light;                                   // 上面
   ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w + d, y - d); ctx.lineTo(x + d, y - d); ctx.closePath(); ctx.fill();
   ctx.fillStyle = dark;                                    // 側面
