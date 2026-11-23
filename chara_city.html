@@ -86,6 +86,7 @@
       <label class="tg"><input type="checkbox" id="beat" checked>ビート</label>
       <label class="tg"><input type="checkbox" id="accomp" checked>伴奏</label>
       <label class="tg"><input type="checkbox" id="lite">軽量</label>
+      <select id="sens" title="マイク感度"><option value="high">感度：高</option><option value="mid" selected>感度：中</option><option value="low">感度：低</option></select>
       <button id="go" class="primary" disabled>▶ スタート</button>
     </div>
   </header>
@@ -116,7 +117,8 @@ const EXERCISES = {
 };
 const BPM = 100, BEAT = 60 / BPM;              // テンポ（音の長さは拍で決める）
 const GUIDE_LEAD = 2 * BEAT, GUIDE_LEN = 0.9 * BEAT, GAP = 2 * BEAT;
-const GATE_RMS = 0.006;
+const GATE_MIN = { high: 0.006, mid: 0.012, low: 0.022 };   // 感度ごとの最低ライン
+let noiseFloor = 0.003, gateNow = 0.012;              // 周りの雑音の大きさを常に学習して、しきい値を自動で上げ下げ
 const SCROLL_PX = 150;       // 練習中のスクロール速度(CSS px/秒)
 const FREE_SCROLL = 45;      // 自由モードのスクロール速度
 const FONT = '"DotGothic16", ui-monospace, monospace';
@@ -359,10 +361,14 @@ function detectPitch() {
   for (let i = 0; i < N; i++) rms += buf[i] * buf[i];
   rms = Math.sqrt(rms / N);
   curRms = rms;
-  if (rms < GATE_RMS) return null;
+  // 雑音レベルの学習（声が出ていないときの音量を、ゆっくり追いかける）
+  if (rms < gateNow) noiseFloor = noiseFloor * 0.97 + rms * 0.03;
+  else noiseFloor = noiseFloor * 0.999 + Math.min(rms, noiseFloor * 2) * 0.001;
+  gateNow = Math.max(GATE_MIN[$('sens').value] || 0.012, noiseFloor * 3.5);
+  if (rms < gateNow) return null;
   const Wn = N / 2;
-  const tMax = Math.min(Wn - 2, Math.floor(sr / 65));
-  const tMin = Math.floor(sr / 1100);
+  const tMax = Math.min(Wn - 2, Math.floor(sr / 75));    // 人の声の範囲（約75〜1000Hz）だけを見る
+  const tMin = Math.floor(sr / 1000);
   const d = yinBuf;
   d[0] = 1;
   let running = 0;
@@ -374,9 +380,9 @@ function detectPitch() {
   }
   let tau = -1;
   for (let t = tMin; t <= tMax; t++) {
-    if (d[t] < 0.12) { while (t + 1 <= tMax && d[t + 1] < d[t]) t++; tau = t; break; }
+    if (d[t] < 0.1) { while (t + 1 <= tMax && d[t + 1] < d[t]) t++; tau = t; break; }
   }
-  if (tau < 0) return null;
+  if (tau < 0 || d[tau] > 0.08) return null;              // 「音程のはっきりした音」だけを声とみなす
   const x0 = d[tau - 1], x1 = d[tau], x2 = tau + 1 <= tMax ? d[tau + 1] : x1;
   const den = x0 + x2 - 2 * x1;
   const better = den ? tau + (x0 - x2) / (2 * den) : tau;
@@ -384,11 +390,13 @@ function detectPitch() {
 }
 function smoothMidi(m) {
   hist.push(m);
-  if (hist.length > 5) hist.shift();
+  if (hist.length > 7) hist.shift();
   const v = hist.filter(x => x !== null);
-  if (v.length < 3) return null;
+  if (v.length < 5) return null;                            // 一瞬の音ではなく、続いている声だけ
   const s = [...v].sort((a, b) => a - b);
   let med = s[Math.floor(s.length / 2)];
+  const steady = v.filter(x => Math.abs(x - med) < 1 || Math.abs(Math.abs(x - med) - 12) < 1).length;
+  if (steady < 4) return null;                              // 高さがバラバラな音（物音・息）は無視
   if (curMidi !== null) {
     const diff = med - curMidi;
     if (Math.abs(Math.abs(diff) - 12) < 0.6) med -= 12 * Math.sign(diff);
@@ -544,7 +552,11 @@ function loop() {
   const nowAbs = performance.now() / 1000;
   const dt = Math.min(0.05, nowAbs - lastFrame); lastFrame = nowAbs;
   animT += dt;
-  const m = smoothMidi(detectPitch());
+  // お手本の音が鳴っている間は、マイクが拾ったお手本を声と間違えないよう判定を止める
+  const tt = nowAbs - t0;
+  const guidePlaying = mode === 'exercise' && $('guide').checked && notes.some(n => tt >= n.start - GUIDE_LEAD - 0.05 && tt < n.start - GUIDE_LEAD + GUIDE_LEN + 0.12);
+  const raw = detectPitch();
+  const m = smoothMidi(guidePlaying ? null : raw);
   if (m !== null) { curMidi = m; lastVoicedAt = nowAbs; }
   else if (nowAbs - lastVoicedAt > 0.25) curMidi = null;
 
@@ -604,7 +616,7 @@ function loop() {
   if (mode === 'free') hint = curMidi !== null ? `いまの声：${noteName(curMidi)}` : 'ピンクの線が きじゅんの「ド」。声を出すと進むよ';
   else if (mode === 'exercise') {
     if (t < notes[0].start - GUIDE_LEAD) hint = 'READY…';
-    else if (active && dev === null) hint = curRms < GATE_RMS ? '声を出して！' : '…';
+    else if (active && dev === null) hint = curRms < gateNow ? '声を出して！' : '…';
     else if (active && Math.abs(dev) <= tol) hint = 'ぴったり！';
     else if (active) hint = dev < 0 ? 'ちょっと低い ▲' : 'ちょっと高い ▼';
     else hint = $('guide').checked ? 'お手本を聴いて、雲に合わせてね' : '次の雲に合わせてね';
