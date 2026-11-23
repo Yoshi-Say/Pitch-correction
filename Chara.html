@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>こえのすけ NEO - 声で進む音程トレーナー（試作）</title>
+<title>こえのすけ 2.5D - 声で進む音程トレーナー（試作）</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
@@ -19,7 +19,7 @@
   .row+.row{margin-top:6px}
   h1{font-family:"DotGothic16",monospace;font-size:17px;margin:0 6px 0 0;color:var(--accent);font-weight:normal;
     letter-spacing:.06em;text-shadow:0 0 10px rgba(255,207,90,.55)}
-  select,button{font-family:inherit;font-size:13px;border-radius:999px;padding:6px 12px;color:var(--text);
+  select,button{font-family:inherit;font-size:12px;border-radius:999px;padding:5px 9px;color:var(--text);
     background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);max-width:100%;
     -webkit-appearance:none;appearance:none}
   select{padding-right:12px}
@@ -29,7 +29,7 @@
   button.primary{background:linear-gradient(135deg,#ffd66e,#ff9f6b);color:#2a1a10;border:none;font-weight:700;
     box-shadow:0 0 14px rgba(255,180,100,.45)}
   button:disabled{opacity:.4;box-shadow:none}
-  label.tg{font-size:13px;color:var(--sub);display:flex;align-items:center;gap:4px}
+  label.tg{font-size:12px;color:var(--sub);display:flex;align-items:center;gap:4px}
   .key{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--sub)}
   .key button{padding:3px 10px}
   #stage{flex:1;position:relative;background:#000}
@@ -83,6 +83,7 @@
       </select>
       <div class="key">キー<button id="kDown">−</button><span id="kVal">0</span><button id="kUp">＋</button></div>
       <label class="tg"><input type="checkbox" id="guide" checked>お手本</label>
+      <label class="tg"><input type="checkbox" id="lite">軽量</label>
       <button id="go" class="primary" disabled>▶ スタート</button>
     </div>
   </header>
@@ -322,7 +323,7 @@ $('go').onclick = () => {
 };
 
 // ===== 座標 =====
-function groundH() { return P * 8; }
+function groundH() { return Math.max(P * 8, Math.round(H * 0.16 / P) * P); }
 function viewRange() {
   if (mode === 'exercise' || mode === 'result') {
     const ms = notes.map(n => n.m);
@@ -504,9 +505,12 @@ function draw(lo, hi, charX, t, active, expr) {
   const ag = ctx.createRadialGradient(sx + 8 * scale, sy + 9 * scale, 2, sx + 8 * scale, sy + 9 * scale, ar);
   ag.addColorStop(0, auraCol + '.45)'); ag.addColorStop(1, auraCol + '0)');
   ctx.fillStyle = ag; ctx.fillRect(sx + 8 * scale - ar, sy + 9 * scale - ar, ar * 2, ar * 2);
-  // 足元の影
-  ctx.fillStyle = 'rgba(0,0,0,.25)';
-  ctx.beginPath(); ctx.ellipse(sx + 8 * scale, sy + 17 * scale, 6 * scale, 1.5 * scale, 0, 0, Math.PI * 2); ctx.fill();
+  // 床に落ちる影（高く飛ぶほど小さく薄く）
+  const floorY = H - groundH() * 0.45;
+  const hgt = Math.max(0, floorY - (sy + 16 * scale));
+  const ssc = Math.max(0.25, 1 - hgt / (H * 0.9));
+  ctx.fillStyle = `rgba(20,0,30,${0.45 * ssc})`;
+  ctx.beginPath(); ctx.ellipse(sx + 8 * scale + 6, floorY, 9 * scale * ssc, 2.2 * scale * ssc, 0, 0, Math.PI * 2); ctx.fill();
   drawSpriteTo(ctx, sx, sy, scale, expr, walking);
   // 汗・びっくり・zzz
   ctx.font = `${P * 5}px ${FONT}`; ctx.textAlign = 'center';
@@ -527,6 +531,7 @@ function draw(lo, hi, charX, t, active, expr) {
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
   popups = popups.filter(p => p.life > 0);
 
+  drawPost();
   // 左の鍵盤（最前面）
   drawKeyboard(lo, hi, active);
 
@@ -540,49 +545,117 @@ function draw(lo, hi, charX, t, active, expr) {
   }
 }
 
-function drawBackground() {
-  const gH = groundH(), skyH = H - gH;
-  const g = ctx.createLinearGradient(0, 0, 0, skyH);
-  g.addColorStop(0, '#120d2a'); g.addColorStop(0.45, '#3b2466'); g.addColorStop(0.75, '#a2477f'); g.addColorStop(1, '#ff9a7a');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, skyH);
-  // 星（ふわっと光る）
-  for (const s2 of stars) {
-    const a = 0.35 + 0.65 * Math.abs(Math.sin(animT * 1.3 + s2.tw));
-    ctx.globalAlpha = a; ctx.fillStyle = '#fff';
-    ctx.shadowColor = '#fff'; ctx.shadowBlur = 6;
-    ctx.fillRect(s2.x * W, s2.y * skyH, 2, 2);
+const offCache = {};
+function blurLayer(factor, fn) {
+  // 縮小して描いてから拡大する「なんちゃってぼかし」（どの端末でも軽く動く）
+  let o = offCache[factor];
+  const w = Math.ceil(W / factor), h = Math.ceil(H / factor);
+  if (!o || o.w !== w || o.h !== h) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    o = offCache[factor] = { c, x: c.getContext('2d'), w, h };
   }
-  ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-  // 光のボケ
-  for (let i = 0; i < 6; i++) {
-    const bx = ((i * 173 + 40 - scrollX * 0.08 * (1 + i % 3)) % (W + 120) + W + 120) % (W + 120) - 60;
-    const by = skyH * (0.25 + 0.5 * ((i * 37) % 10) / 10);
-    const r = 30 + (i % 3) * 18;
+  o.x.setTransform(1, 0, 0, 1, 0, 0); o.x.clearRect(0, 0, w, h);
+  o.x.setTransform(1 / factor, 0, 0, 1 / factor, 0, 0);
+  fn(o.x);
+  ctx.save(); ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(o.c, 0, 0, w, h, 0, 0, W, H);
+  ctx.restore();
+}
+function drawHillsTo(c, arr, offset, color, baseY, colW) {
+  c.fillStyle = color;
+  const start = Math.floor(offset / colW), sub = offset % colW;
+  for (let i = 0; i * colW - sub < W + colW; i++) {
+    const h = arr[(start + i) % arr.length] * P;
+    c.fillRect(Math.round(i * colW - sub), baseY - h, colW, h);
+  }
+}
+function drawBackground() {
+  const gH = groundH(), skyH = H - gH, lite = $('lite').checked;
+  const g = ctx.createLinearGradient(0, 0, 0, skyH);
+  g.addColorStop(0, '#120d2a'); g.addColorStop(0.45, '#3b2466'); g.addColorStop(0.78, '#a2477f'); g.addColorStop(1, '#ffa27c');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, skyH);
+  // 星
+  for (const s2 of stars) {
+    ctx.globalAlpha = 0.3 + 0.7 * Math.abs(Math.sin(animT * 1.3 + s2.tw));
+    ctx.fillStyle = '#fff'; ctx.fillRect(s2.x * W, s2.y * skyH * 0.8, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+  // 遠景の山（強くぼかす）
+  const far = c => {
+    drawHillsTo(c, hills2.map(v => v * 1.6), scrollX * 0.1, '#5a2f6e', skyH, P * 4);
+    const f = c.createLinearGradient(0, skyH * 0.5, 0, skyH);
+    f.addColorStop(0, 'rgba(255,150,140,0)'); f.addColorStop(1, 'rgba(255,160,140,.35)');
+    c.fillStyle = f; c.fillRect(0, skyH * 0.5, W, skyH * 0.5);
+  };
+  // 中景の山（少しぼかす）
+  const mid = c => {
+    drawHillsTo(c, hills1, scrollX * 0.3, '#7d3f74', skyH, P * 2);
+    const f = c.createLinearGradient(0, skyH * 0.75, 0, skyH);
+    f.addColorStop(0, 'rgba(255,190,160,0)'); f.addColorStop(1, 'rgba(255,190,160,.25)');
+    c.fillStyle = f; c.fillRect(0, skyH * 0.75, W, skyH * 0.25);
+  };
+  if (lite) { far(ctx); mid(ctx); } else { blurLayer(8, far); blurLayer(3, mid); }
+  // 光の筋
+  if (!lite) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      const sway = Math.sin(animT * 0.3 + i * 2) * 25;
+      const x0 = W * (0.15 + i * 0.3) + sway, bw = 40 + i * 25;
+      const lg = ctx.createLinearGradient(0, 0, 0, skyH);
+      lg.addColorStop(0, 'rgba(255,220,190,.10)'); lg.addColorStop(1, 'rgba(255,220,190,0)');
+      ctx.fillStyle = lg;
+      ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0 + bw, 0);
+      ctx.lineTo(x0 + bw + skyH * 0.45, skyH); ctx.lineTo(x0 + skyH * 0.45, skyH); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // 奥行きのある床（遠近感のある市松模様）
+  const top = skyH, vpX = W * 0.55, k = 0.55, tw = P * 18, N = 7;
+  const sc = y => k + (1 - k) * ((y - top) / gH);
+  const off = scrollX % (tw * 2);
+  for (let i = 0; i < N; i++) {
+    const yA = top + gH * Math.pow(i / N, 1.5), yB = top + gH * Math.pow((i + 1) / N, 1.5);
+    const shade = 0.55 + 0.45 * (i / N);
+    for (let j = -3; j * tw - off < W * 1.8; j++) {
+      const xb0 = j * tw - off, xb1 = xb0 + tw;
+      const a0 = vpX + (xb0 - vpX) * sc(yA), a1 = vpX + (xb1 - vpX) * sc(yA);
+      const b0 = vpX + (xb0 - vpX) * sc(yB), b1 = vpX + (xb1 - vpX) * sc(yB);
+      const even = ((j % 2) + 2) % 2 === i % 2;
+      const r = even ? 111 : 82, gg = even ? 208 : 176, b = even ? 138 : 112;
+      ctx.fillStyle = `rgb(${Math.round(r * shade)},${Math.round(gg * shade)},${Math.round(b * shade)})`;
+      ctx.beginPath(); ctx.moveTo(a0, yA); ctx.lineTo(a1, yA); ctx.lineTo(b1, yB + 0.5); ctx.lineTo(b0, yB + 0.5); ctx.closePath(); ctx.fill();
+    }
+  }
+  // 床の奥を霧で溶かす
+  const fg = ctx.createLinearGradient(0, top, 0, top + gH * 0.5);
+  fg.addColorStop(0, 'rgba(255,170,150,.55)'); fg.addColorStop(1, 'rgba(255,170,150,0)');
+  ctx.fillStyle = fg; ctx.fillRect(0, top, W, gH * 0.5);
+}
+const motes = Array.from({ length: 26 }, () => ({ x: Math.random(), y: Math.random(), s: Math.random() }));
+function drawPost() {
+  if ($('lite').checked) return;
+  // 光の中を漂うちり
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const m of motes) {
+    m.x -= (0.0004 + m.s * 0.0008) + (mode === 'exercise' ? 0.0015 : 0); m.y += Math.sin(animT + m.s * 9) * 0.0004;
+    if (m.x < 0) { m.x = 1; m.y = Math.random(); }
+    ctx.globalAlpha = 0.25 + 0.35 * Math.abs(Math.sin(animT * 2 + m.s * 7));
+    ctx.fillStyle = '#ffe7c7';
+    ctx.beginPath(); ctx.arc(m.x * W, m.y * (H - groundH()), 1 + m.s * 1.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  // 手前を横切る大きなボケ（ピンぼけの前景）
+  for (let i = 0; i < 2; i++) {
+    const bx = ((W * (0.3 + i * 0.6) - scrollX * 1.6) % (W + 240) + W + 240) % (W + 240) - 120;
+    const by = H - groundH() * (0.35 + i * 0.25), r = 70 + i * 30;
     const rg = ctx.createRadialGradient(bx, by, 0, bx, by, r);
-    rg.addColorStop(0, i % 2 ? 'rgba(255,170,200,.18)' : 'rgba(170,190,255,.16)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    rg.addColorStop(0, 'rgba(40,90,60,.55)'); rg.addColorStop(0.6, 'rgba(40,90,60,.25)'); rg.addColorStop(1, 'rgba(40,90,60,0)');
     ctx.fillStyle = rg; ctx.fillRect(bx - r, by - r, r * 2, r * 2);
   }
-  // 山（ドット）＋霧
-  drawHills(hills2, scrollX * 0.15, '#5a2f6e', gH, P * 3);
-  let fog = ctx.createLinearGradient(0, skyH * 0.55, 0, skyH);
-  fog.addColorStop(0, 'rgba(255,150,140,0)'); fog.addColorStop(1, 'rgba(255,150,140,.28)');
-  ctx.fillStyle = fog; ctx.fillRect(0, skyH * 0.55, W, skyH * 0.45);
-  drawHills(hills1, scrollX * 0.35, '#7d3f74', gH, P * 2);
-  fog = ctx.createLinearGradient(0, skyH * 0.7, 0, skyH);
-  fog.addColorStop(0, 'rgba(255,190,160,0)'); fog.addColorStop(1, 'rgba(255,190,160,.22)');
-  ctx.fillStyle = fog; ctx.fillRect(0, skyH * 0.7, W, skyH * 0.3);
-  // 地面（ドット）＋上端の光
-  const gy = H - gH;
-  ctx.fillStyle = '#6fd08a'; ctx.fillRect(0, gy, W, P * 2);
-  ctx.fillStyle = '#3f9e63'; ctx.fillRect(0, gy + P * 2, W, P);
-  const gg = ctx.createLinearGradient(0, gy + P * 3, 0, H);
-  gg.addColorStop(0, '#9a6a4c'); gg.addColorStop(1, '#4a2f2a');
-  ctx.fillStyle = gg; ctx.fillRect(0, gy + P * 3, W, gH - P * 3);
-  ctx.shadowColor = '#b8ffcc'; ctx.shadowBlur = 12; ctx.fillStyle = 'rgba(200,255,215,.6)';
-  ctx.fillRect(0, gy, W, 1); ctx.shadowBlur = 0;
-  const off = Math.floor(scrollX / P) % 8;
-  ctx.fillStyle = '#6fd08a';
-  for (let x = -off * P; x < W; x += P * 8) ctx.fillRect(x + P * 2, gy - P, P, P);
+  // ビネット（四隅を暗く）
+  const vg = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.35, W / 2, H * 0.45, Math.max(W, H) * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(10,0,20,.55)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
 }
 function drawKeyboard(lo, hi, active) {
   const kw = KW(), skyBottom = H - groundH();
@@ -626,18 +699,20 @@ function drawHills(arr, offset, color, gH, colW) {
   }
 }
 function drawCloud(x, y, w, h, base, light, dark) {
-  // 角を落としたドットの雲ブロック
-  ctx.fillStyle = dark;
-  ctx.fillRect(x + P, y, w - 2 * P, h); ctx.fillRect(x, y + P, w, h - 2 * P);
-  ctx.fillStyle = base;
-  ctx.fillRect(x + P, y + P, w - 2 * P, h - 2 * P);
-  ctx.fillStyle = light;
-  ctx.fillRect(x + 2 * P, y + P, w - 4 * P, P);
-  // もこもこ
-  for (let cx = x + P * 3; cx < x + w - P * 4; cx += P * 6) {
-    ctx.fillStyle = dark; ctx.fillRect(cx, y - P * 2, P * 4, P * 2);
-    ctx.fillStyle = base; ctx.fillRect(cx + P, y - P, P * 2, P * 2);
-    ctx.fillStyle = light; ctx.fillRect(cx + P, y - P, P, P);
+  // 厚みのある雲ブロック（上面・側面・正面）
+  const d = P * 4;
+  ctx.fillStyle = light;                                   // 上面
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w + d, y - d); ctx.lineTo(x + d, y - d); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = dark;                                    // 側面
+  ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w + d, y - d); ctx.lineTo(x + w + d, y + h - d); ctx.lineTo(x + w, y + h); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = dark; ctx.fillRect(x, y, w, h);          // 正面の縁
+  ctx.fillStyle = base; ctx.fillRect(x + P, y + P, w - 2 * P, h - 2 * P);
+  ctx.fillStyle = light; ctx.fillRect(x + P, y + P, w - 2 * P, P);
+  // 上面のもこもこ
+  for (let cx = x + P * 4; cx < x + w - P * 3; cx += P * 7) {
+    ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.55;
+    ctx.fillRect(cx + d * 0.5, y - d * 0.6, P * 3, P);
+    ctx.globalAlpha = 1;
   }
 }
 function drawNoteIcon(x, y, c) {
