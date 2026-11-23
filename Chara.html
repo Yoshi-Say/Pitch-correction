@@ -3,50 +3,58 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>こえのすけ - 声で動く音程トレーナー（試作）</title>
+<title>こえのすけ - 声で進む音程トレーナー（試作）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg1:#1b2140; --bg2:#2b3466; --panel:rgba(255,255,255,.08);
-    --text:#f4f6ff; --sub:#b9c0e6; --accent:#ffd36b; --good:#5ee39a; --bad:#ff8a7a;
+    --ink:#3b2a4a; --paper:#fff6e9; --accent:#ffcf5a; --pink:#ff6f91;
+    --panel:#2a1f3d; --text:#fff6e9; --sub:#d9c8f0;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg1);color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--panel);color:var(--text);
+    font-family:"DotGothic16",ui-monospace,monospace}
   #wrap{position:fixed;inset:0;display:flex;flex-direction:column}
-  header{padding:8px 10px 6px;background:var(--panel);backdrop-filter:blur(6px)}
+  header{padding:8px 10px 7px;background:var(--panel);border-bottom:4px solid var(--ink)}
   .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .row+.row{margin-top:6px}
-  h1{font-size:15px;margin:0 6px 0 0;letter-spacing:.05em}
-  select,button{font-size:14px;border-radius:10px;border:none;padding:7px 10px;
-    background:#3a4480;color:var(--text)}
-  button.primary{background:var(--accent);color:#2a2200;font-weight:700}
-  button:disabled{opacity:.4}
+  h1{font-size:18px;margin:0 6px 0 0;color:var(--accent);letter-spacing:.08em;font-weight:normal;
+    text-shadow:2px 2px 0 var(--ink)}
+  select,button{font-family:inherit;font-size:14px;border-radius:0;padding:6px 9px;color:var(--ink);
+    background:var(--paper);border:3px solid var(--ink);box-shadow:3px 3px 0 #000}
+  button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #000}
+  button.primary{background:var(--accent)}
+  button:disabled{opacity:.45}
   label.tg{font-size:13px;color:var(--sub);display:flex;align-items:center;gap:4px}
   .key{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--sub)}
-  .key button{padding:4px 9px}
-  #stage{flex:1;position:relative}
-  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-  #hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;font-size:14px;color:var(--sub);
-    pointer-events:none;text-shadow:0 1px 3px #000}
+  .key button{padding:2px 8px}
+  #stage{flex:1;position:relative;background:#000}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block;image-rendering:pixelated}
+  #hint{position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:15px;color:#fff;
+    pointer-events:none;text-shadow:2px 2px 0 var(--ink),-1px -1px 0 var(--ink)}
   #overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
-    background:rgba(10,12,30,.72);padding:16px}
-  #card{background:#fff;color:#222;border-radius:18px;width:min(420px,100%);padding:18px 18px 14px;
-    box-shadow:0 10px 40px rgba(0,0,0,.4);text-align:center}
-  #card .small{font-size:12px;color:#777}
-  #card .type{font-size:26px;font-weight:800;margin:4px 0 2px}
-  #card .score{font-size:44px;font-weight:800;color:#3a4480;line-height:1.1}
-  #card .advice{font-size:14px;margin:8px 0 10px;line-height:1.6;text-align:left;background:#f3f5ff;
-    border-radius:10px;padding:8px 10px}
-  #bars{display:flex;gap:4px;align-items:flex-end;height:60px;margin:6px 0 4px}
-  #bars div{flex:1;border-radius:4px 4px 0 0;position:relative}
-  #bars span{position:absolute;bottom:-16px;left:0;right:0;font-size:10px;color:#666}
-  #card .btns{display:flex;gap:8px;justify-content:center;margin-top:22px}
-  #card button{background:#3a4480;color:#fff}
-  #card button.primary{background:var(--accent);color:#2a2200}
+    background:rgba(20,10,30,.6);padding:16px}
+  /* RPG風ウィンドウ */
+  #card{background:#140c22;color:#fff;width:min(420px,100%);padding:16px 16px 14px;text-align:center;
+    border:4px solid #fff;outline:4px solid #140c22;box-shadow:0 0 0 8px #fff}
+  #card .small{font-size:12px;color:var(--sub)}
+  #card .type{font-size:26px;margin:4px 0 2px;color:var(--accent);text-shadow:2px 2px 0 #000}
+  #card .score{font-size:46px;line-height:1.1}
+  #card .advice{font-size:14px;margin:10px 0;line-height:1.7;text-align:left;border-top:2px dashed #6b5a8a;
+    border-bottom:2px dashed #6b5a8a;padding:8px 2px}
+  #bars{display:flex;gap:4px;align-items:flex-end;height:56px;margin:6px 0 18px}
+  #bars div{flex:1;position:relative}
+  #bars span{position:absolute;bottom:-17px;left:0;right:0;font-size:11px;color:var(--sub)}
+  #card .btns{display:flex;gap:10px;justify-content:center}
   #startCover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:14px;text-align:center;padding:20px;background:linear-gradient(var(--bg1),var(--bg2))}
-  #startCover p{color:var(--sub);font-size:14px;line-height:1.7;margin:0}
-  #startCover button{font-size:18px;padding:12px 26px}
+    gap:14px;text-align:center;padding:20px;background:#2a1f3d}
+  #startCover .title{font-size:34px;color:var(--accent);text-shadow:3px 3px 0 var(--ink),6px 6px 0 #000;letter-spacing:.1em}
+  #startCover p{color:var(--sub);font-size:14px;line-height:1.8;margin:0}
+  #startCover button{font-size:17px;padding:10px 22px}
+  #coverChara{width:96px;height:96px;image-rendering:pixelated}
+  .blink{animation:bl 1s steps(2) infinite}
+  @keyframes bl{50%{opacity:.2}}
 </style>
 </head>
 <body>
@@ -68,8 +76,8 @@
         <option value="20">きびしい</option>
       </select>
       <div class="key">キー<button id="kDown">−</button><span id="kVal">0</span><button id="kUp">＋</button></div>
-      <label class="tg"><input type="checkbox" id="guide" checked>お手本の音</label>
-      <button id="go" class="primary" disabled>練習スタート</button>
+      <label class="tg"><input type="checkbox" id="guide" checked>お手本</label>
+      <button id="go" class="primary" disabled>▶ スタート</button>
     </div>
   </header>
   <div id="stage">
@@ -77,10 +85,10 @@
     <div id="hint"></div>
     <div id="overlay"><div id="card"></div></div>
     <div id="startCover">
-      <div style="font-size:44px">🎤</div>
-      <div style="font-size:20px;font-weight:700">声でキャラを動かそう</div>
-      <p>声が高いとキャラが上へ、低いと下へ動きます。<br>流れてくる足場にキャラを乗せ続けてね。<br><span style="font-size:12px">※イヤホン推奨（スピーカーだとお手本の音を拾うことがあります）</span></p>
-      <button id="micBtn" class="primary">マイクをONにする</button>
+      <canvas id="coverChara" width="16" height="16"></canvas>
+      <div class="title">こえのすけ</div>
+      <p>声が高いと上へ、低いと下へ。<br>流れてくる雲の足場に、こえのすけを乗せ続けよう！<br><span style="font-size:12px">※イヤホン推奨</span></p>
+      <button id="micBtn" class="primary"><span class="blink">▶</span> マイクをONにする</button>
     </div>
   </div>
 </div>
@@ -97,11 +105,46 @@ const EXERCISES = {
   high:  { name: '高音チャレンジ',         seq: [0,4,7,12,11,7,4,0], dur: 1.4 },
   long:  { name: 'ロングトーン',           seq: [0,7,4,0],           dur: 2.6 },
 };
-const GUIDE_LEAD = 1.0;   // 足場が来る何秒前にお手本を鳴らすか
-const GUIDE_LEN  = 0.6;
-const GAP        = 1.2;   // 足場と足場の間隔
-const GATE_RMS   = 0.006; // これ以下は無音扱い
-const SCROLL_PX  = 150;   // 1秒あたりの移動量(CSS px)
+const GUIDE_LEAD = 1.0, GUIDE_LEN = 0.6, GAP = 1.2;
+const GATE_RMS = 0.006;
+const SCROLL_PX = 150;       // 練習中のスクロール速度(CSS px/秒)
+const FREE_SCROLL = 45;      // 自由モードのスクロール速度
+const FONT = '"DotGothic16", ui-monospace, monospace';
+
+// ===== ドット絵（16x16） =====
+// o:輪郭 b:体 h:ハイライト n:音符アンテナ f:足
+const BODY = [
+  '..........nnn...',
+  '..........n..n..',
+  '..........n.....',
+  '.....oooooo.....',
+  '...oobbbbbboo...',
+  '..obhhbbbbbbbo..',
+  '.obhbbbbbbbbbbo.',
+  '.obbbbbbbbbbbbo.',
+  'obbbbbbbbbbbbbbo',
+  'obbbbbbbbbbbbbbo',
+  'obbbbbbbbbbbbbbo',
+  'obbbbbbbbbbbbbbo',
+  '.obbbbbbbbbbbbo.',
+  '.obbbbbbbbbbbbo.',
+  '..oobbbbbbbboo..',
+  '...offo..offo...',
+];
+const FEET_B = '....offo..offo..';
+const PAL = { o:'#3b2a4a', b:'#ffe3c2', h:'#ffffff', n:'#ff6f91', f:'#c97a5a' };
+const INK = '#3b2a4a', CHEEK = '#ff9eb0', MOUTH = '#b3364c';
+// 顔パーツ（[x,y,色]の配列）
+const FACES = {
+  normal: [[5,9],[5,10],[10,9],[10,10],[7,12],[8,12]],
+  blink:  [[4,10],[5,10],[6,10],[9,10],[10,10],[11,10],[7,12],[8,12]],
+  happy:  [[4,10],[5,9],[6,10],[9,10],[10,9],[11,10],[6,11,MOUTH],[7,11,MOUTH],[8,11,MOUTH],[9,11,MOUTH],[7,12,MOUTH],[8,12,MOUTH]],
+  high:   [[4,8],[5,8],[4,9],[5,9],[10,8],[11,8],[10,9],[11,9],[7,11,MOUTH],[8,11,MOUTH],[7,12,MOUTH],[8,12,MOUTH]],
+  low:    [[5,9],[5,10],[10,9],[10,10],[6,12],[7,11],[8,12],[9,11]],
+  sing:   [[5,9],[5,10],[10,9],[10,10],[7,11,MOUTH],[8,11,MOUTH],[7,12,MOUTH],[8,12,MOUTH]],
+  sleep:  [[4,10],[5,10],[6,10],[9,10],[10,10],[11,10],[7,12],[8,12]],
+};
+const CHEEKS = [[3,11],[4,11],[11,11],[12,11]];
 
 // ===== 要素 =====
 const $ = id => document.getElementById(id);
@@ -114,16 +157,22 @@ let keyShift = 0;
 $('kDown').onclick = () => { keyShift = Math.max(-6, keyShift - 1); $('kVal').textContent = keyShift; };
 $('kUp').onclick   = () => { keyShift = Math.min( 6, keyShift + 1); $('kVal').textContent = keyShift; };
 
+// タイトル画面のキャラ
+(() => {
+  const c = $('coverChara').getContext('2d');
+  drawSpriteTo(c, 0, 0, 1, 'happy', false);
+})();
+
 // ===== 状態 =====
 let ac = null, analyser = null, buf = null, yinBuf = null;
-let mode = 'off';           // off | free | exercise | result
+let mode = 'off';
 let notes = [], t0 = 0, endTime = 0, tol = 35;
 let combo = 0, bestCombo = 0;
-let hist = [];              // 平滑化用
-let curMidi = null, lastVoicedAt = 0, curRms = 0;
-let charY = null, squash = 0, blinkT = 0;
+let hist = [], curMidi = null, lastVoicedAt = 0, curRms = 0;
+let charY = null, jump = 0, animT = 0, scrollX = 0, lastFrame = 0;
 let trail = [], particles = [], popups = [];
-let W = 0, H = 0, dpr = 1;
+let W = 0, H = 0, dpr = 1, P = 3;
+let hills1 = [], hills2 = [], stars = [];
 
 // ===== 画面サイズ =====
 function resize() {
@@ -132,6 +181,16 @@ function resize() {
   W = r.width; H = r.height;
   cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  P = Math.max(2, Math.min(4, Math.round(Math.min(W, H) / 120)));
+  // 背景の山と星
+  hills1 = []; hills2 = [];
+  for (let i = 0; i < 400; i++) {
+    hills1.push(Math.round(6 + 4 * Math.sin(i * 0.13) + 2 * Math.sin(i * 0.37)));
+    hills2.push(Math.round(10 + 6 * Math.sin(i * 0.07 + 1) + 3 * Math.sin(i * 0.23)));
+  }
+  stars = [];
+  for (let i = 0; i < 40; i++) stars.push({ x: Math.random(), y: Math.random() * 0.5, tw: Math.random() * 6 });
 }
 window.addEventListener('resize', resize);
 
@@ -147,13 +206,14 @@ $('micBtn').onclick = async () => {
     const src = ac.createMediaStreamSource(stream);
     analyser = ac.createAnalyser();
     analyser.fftSize = 2048;
-    src.connect(analyser);              // スピーカーには繋がない（ハウリング防止）
+    src.connect(analyser);
     buf = new Float32Array(analyser.fftSize);
     yinBuf = new Float32Array(analyser.fftSize / 2);
     $('startCover').style.display = 'none';
     $('go').disabled = false;
     mode = 'free';
     resize();
+    lastFrame = performance.now() / 1000;
     requestAnimationFrame(loop);
   } catch (e) {
     alert('マイクを使えませんでした。ブラウザの設定でマイクを許可してください。\n' + e.message);
@@ -169,10 +229,9 @@ function detectPitch() {
   rms = Math.sqrt(rms / N);
   curRms = rms;
   if (rms < GATE_RMS) return null;
-
   const Wn = N / 2;
-  const tMax = Math.min(Wn - 2, Math.floor(sr / 65));   // 下限 約65Hz
-  const tMin = Math.floor(sr / 1100);                   // 上限 約1100Hz
+  const tMax = Math.min(Wn - 2, Math.floor(sr / 65));
+  const tMin = Math.floor(sr / 1100);
   const d = yinBuf;
   d[0] = 1;
   let running = 0;
@@ -184,19 +243,14 @@ function detectPitch() {
   }
   let tau = -1;
   for (let t = tMin; t <= tMax; t++) {
-    if (d[t] < 0.12) {
-      while (t + 1 <= tMax && d[t + 1] < d[t]) t++;
-      tau = t; break;
-    }
+    if (d[t] < 0.12) { while (t + 1 <= tMax && d[t + 1] < d[t]) t++; tau = t; break; }
   }
   if (tau < 0) return null;
   const x0 = d[tau - 1], x1 = d[tau], x2 = tau + 1 <= tMax ? d[tau + 1] : x1;
   const den = x0 + x2 - 2 * x1;
   const better = den ? tau + (x0 - x2) / (2 * den) : tau;
-  const f = sr / better;
-  return 69 + 12 * Math.log2(f / 440);
+  return 69 + 12 * Math.log2(sr / better / 440);
 }
-
 function smoothMidi(m) {
   hist.push(m);
   if (hist.length > 5) hist.shift();
@@ -204,7 +258,6 @@ function smoothMidi(m) {
   if (v.length < 3) return null;
   const s = [...v].sort((a, b) => a - b);
   let med = s[Math.floor(s.length / 2)];
-  // 1オクターブ跳ね（誤検出）を抑える
   if (curMidi !== null) {
     const diff = med - curMidi;
     if (Math.abs(Math.abs(diff) - 12) < 0.6) med -= 12 * Math.sign(diff);
@@ -218,24 +271,35 @@ function buildExercise() {
   const base = parseInt($('voice').value, 10) + keyShift;
   tol = parseInt($('level').value, 10);
   notes = [];
-  let t = 2.0;  // 最初の足場までの余裕
+  let t = 2.0;
   for (const step of ex.seq) {
     notes.push({ m: base + step, start: t, dur: ex.dur, samples: [], done: false, ratio: 0 });
     t += ex.dur + GAP;
   }
   endTime = t - GAP + 0.6;
 }
-
 function playGuide(m, when) {
   const osc = ac.createOscillator(), g = ac.createGain();
-  osc.type = 'triangle';
+  osc.type = 'square';                       // ファミコンっぽい矩形波
   osc.frequency.value = 440 * Math.pow(2, (m - 69) / 12);
   g.gain.setValueAtTime(0, when);
-  g.gain.linearRampToValueAtTime(0.25, when + 0.03);
-  g.gain.setValueAtTime(0.25, when + GUIDE_LEN - 0.12);
+  g.gain.linearRampToValueAtTime(0.08, when + 0.02);
+  g.gain.setValueAtTime(0.08, when + GUIDE_LEN - 0.1);
   g.gain.linearRampToValueAtTime(0, when + GUIDE_LEN);
   osc.connect(g).connect(ac.destination);
   osc.start(when); osc.stop(when + GUIDE_LEN + 0.05);
+}
+function blip(freq, len = 0.08, vol = 0.05) {      // 効果音
+  if (!ac) return;
+  const now = ac.currentTime;
+  const osc = ac.createOscillator(), g = ac.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(freq, now);
+  osc.frequency.linearRampToValueAtTime(freq * 1.5, now + len);
+  g.gain.setValueAtTime(vol, now);
+  g.gain.linearRampToValueAtTime(0, now + len);
+  osc.connect(g).connect(ac.destination);
+  osc.start(now); osc.stop(now + len + 0.02);
 }
 
 $('go').onclick = () => {
@@ -246,14 +310,13 @@ $('go').onclick = () => {
   combo = 0; bestCombo = 0; trail = []; particles = []; popups = [];
   t0 = performance.now() / 1000;
   const acT0 = ac.currentTime;
-  if ($('guide').checked) {
-    for (const n of notes) playGuide(n.m, acT0 + n.start - GUIDE_LEAD);
-  }
+  if ($('guide').checked) for (const n of notes) playGuide(n.m, acT0 + n.start - GUIDE_LEAD);
   mode = 'exercise';
   $('go').disabled = true;
 };
 
-// ===== 表示範囲 =====
+// ===== 座標 =====
+function groundH() { return P * 8; }
 function viewRange() {
   if (mode === 'exercise' || mode === 'result') {
     const ms = notes.map(n => n.m);
@@ -263,36 +326,32 @@ function viewRange() {
   return [base - 7, base + 19];
 }
 function yOf(m, lo, hi) {
-  const top = 30, bot = H - 50;
+  const top = 28, bot = H - groundH() - 26;
   return top + (hi - m) / (hi - lo) * (bot - top);
 }
-function foldInto(m, lo, hi) {
-  while (m > hi + 0.5) m -= 12;
-  while (m < lo - 0.5) m += 12;
-  return m;
-}
-function foldCents(c) {
-  while (c > 600) c -= 1200;
-  while (c < -600) c += 1200;
-  return c;
-}
+const snap = v => Math.round(v / P) * P;
+function foldInto(m, lo, hi) { while (m > hi + 0.5) m -= 12; while (m < lo - 0.5) m += 12; return m; }
+function foldCents(c) { while (c > 600) c -= 1200; while (c < -600) c += 1200; return c; }
 const noteName = m => NOTE_NAMES[((Math.round(m) % 12) + 12) % 12];
 
 // ===== メインループ =====
 function loop() {
   requestAnimationFrame(loop);
   const nowAbs = performance.now() / 1000;
-  const raw = detectPitch();
-  const m = smoothMidi(raw);
+  const dt = Math.min(0.05, nowAbs - lastFrame); lastFrame = nowAbs;
+  animT += dt;
+  const m = smoothMidi(detectPitch());
   if (m !== null) { curMidi = m; lastVoicedAt = nowAbs; }
   else if (nowAbs - lastVoicedAt > 0.25) curMidi = null;
 
   const [lo, hi] = viewRange();
-  const charX = W * 0.28;
+  const charX = snap(W * 0.28);
   const t = nowAbs - t0;
+  const speed = mode === 'exercise' ? SCROLL_PX : (curMidi !== null ? FREE_SCROLL : 0);
+  scrollX += speed * dt;
 
   // --- 判定 ---
-  let active = null, dev = null, expr = 'idle';
+  let active = null, dev = null, expr = 'normal';
   if (mode === 'exercise') {
     active = notes.find(n => t >= n.start && t < n.start + n.dur) || null;
     if (active) {
@@ -300,10 +359,8 @@ function loop() {
       active.samples.push({ t: t - active.start, dev });
       if (dev !== null && Math.abs(dev) <= tol) {
         expr = 'happy';
-        if (Math.random() < 0.25) spawnSparkle(charX, charY ?? H / 2);
-      } else if (dev !== null) {
-        expr = dev < 0 ? 'low' : 'high';
-      }
+        if (Math.random() < 0.3) spawnSparkle(charX, charY ?? H / 2);
+      } else if (dev !== null) expr = dev < 0 ? 'low' : 'high';
     }
     for (const n of notes) {
       if (!n.done && t >= n.start + n.dur) {
@@ -312,194 +369,211 @@ function loop() {
         const hit = n.samples.filter(s => s.dev !== null && Math.abs(s.dev) <= tol).length;
         n.ratio = hit / tot;
         if (n.ratio >= 0.6) {
-          combo++; bestCombo = Math.max(bestCombo, combo); squash = 1;
-          popups.push({ text: combo >= 3 ? `${combo}コンボ！` : 'ナイス！', x: charX, y: (charY ?? H/2) - 50, life: 1, color: '#ffd36b' });
+          combo++; bestCombo = Math.max(bestCombo, combo); jump = 1;
+          popups.push({ text: combo >= 3 ? `${combo} COMBO!` : 'NICE!', x: charX, y: (charY ?? H/2) - 40, life: 1, color: '#ffcf5a' });
+          blip(660 + combo * 40);
         } else {
           combo = 0;
-          popups.push({ text: 'おしい！', x: charX, y: (charY ?? H/2) - 50, life: 1, color: '#ffb0a5' });
+          popups.push({ text: 'おしい！', x: charX, y: (charY ?? H/2) - 40, life: 1, color: '#ffb0c0' });
+          blip(220, 0.12, 0.04);
         }
       }
     }
     if (t > endTime) showResult();
   }
-  if (expr === 'idle' && curMidi !== null) expr = 'sing';
+  if (expr === 'normal' && curMidi !== null) expr = 'sing';
   if (curMidi === null && mode !== 'exercise') expr = 'sleep';
+  if (expr === 'normal' && (animT % 3.2) < 0.15) expr = 'blink';
 
   // --- キャラ位置 ---
-  let targetY;
-  if (curMidi !== null) targetY = yOf(foldInto(curMidi, lo, hi), lo, hi);
-  else targetY = charY ?? yOf((lo + hi) / 2, lo, hi);
+  let targetY = curMidi !== null ? yOf(foldInto(curMidi, lo, hi), lo, hi) : (charY ?? yOf((lo + hi) / 2, lo, hi));
   charY = charY === null ? targetY : charY + (targetY - charY) * 0.3;
-  if (curMidi !== null) trail.push({ x: charX, y: charY, ok: expr === 'happy' });
-  if (trail.length > 90) trail.shift();
-  for (const p of trail) p.x -= SCROLL_PX / 60;
+  jump *= 0.85;
+  if (curMidi !== null) trail.push({ x: charX - 8 * P, y: charY, ok: expr === 'happy', life: 1 });
+  for (const p of trail) { p.x -= speed * dt; p.life -= dt * 0.8; }
+  trail = trail.filter(p => p.life > 0 && p.x > -10);
 
-  // --- 描画 ---
-  draw(lo, hi, charX, t, active, dev, expr);
+  draw(lo, hi, charX, t, active, expr);
 
   // --- ヒント ---
   let hint = '';
-  if (mode === 'free') hint = curMidi !== null ? `いまの声：${noteName(curMidi)}` : '声を出すとキャラが動くよ（「あー」でOK）';
+  if (mode === 'free') hint = curMidi !== null ? `いまの声：${noteName(curMidi)}` : '声を出すと こえのすけ が進むよ（「あー」でOK）';
   else if (mode === 'exercise') {
-    if (t < notes[0].start - GUIDE_LEAD) hint = 'よーい…';
+    if (t < notes[0].start - GUIDE_LEAD) hint = 'READY…';
     else if (active && dev === null) hint = curRms < GATE_RMS ? '声を出して！' : '…';
     else if (active && Math.abs(dev) <= tol) hint = 'ぴったり！';
-    else if (active) hint = dev < 0 ? 'ちょっと低い ↑' : 'ちょっと高い ↓';
-    else hint = $('guide').checked ? 'お手本を聴いて、足場に合わせてね' : '次の足場に合わせてね';
+    else if (active) hint = dev < 0 ? 'ちょっと低い ▲' : 'ちょっと高い ▼';
+    else hint = $('guide').checked ? 'お手本を聴いて、雲に合わせてね' : '次の雲に合わせてね';
   }
   $('hint').textContent = hint;
 }
 
 // ===== 描画 =====
-function draw(lo, hi, charX, t, active, dev, expr) {
-  // 背景
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#1b2140'); g.addColorStop(1, '#2b3466');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+function draw(lo, hi, charX, t, active, expr) {
+  drawBackground();
 
-  // 音の線
-  ctx.font = '11px sans-serif'; ctx.textBaseline = 'middle';
+  // 音の段（点線）
+  ctx.font = `${P * 4}px ${FONT}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
   for (let m = Math.ceil(lo); m <= Math.floor(hi); m++) {
-    const y = yOf(m, lo, hi);
     const pc = ((m % 12) + 12) % 12;
-    const natural = [0,2,4,5,7,9,11].includes(pc);
-    ctx.strokeStyle = pc === 0 ? 'rgba(255,255,255,.22)' : natural ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.03)';
-    ctx.beginPath(); ctx.moveTo(34, y); ctx.lineTo(W, y); ctx.stroke();
-    if (natural) { ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fillText(NOTE_NAMES[pc], 6, y); }
+    if (![0,2,4,5,7,9,11].includes(pc)) continue;
+    const y = snap(yOf(m, lo, hi));
+    ctx.fillStyle = pc === 0 ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.14)';
+    for (let x = P * 10; x < W; x += P * 4) ctx.fillRect(x, y, P, P);
+    ctx.fillStyle = 'rgba(255,255,255,.6)';
+    ctx.fillText(NOTE_NAMES[pc], P * 2, y + 1);
   }
 
-  // 足場
+  // 雲の足場
   if (mode === 'exercise' || mode === 'result') {
     const pxPerCent = Math.abs(yOf(lo, lo, hi) - yOf(lo + 1, lo, hi)) / 100;
     for (const n of notes) {
-      const x = charX + (n.start - t) * SCROLL_PX;
-      const w = n.dur * SCROLL_PX;
+      const x = snap(charX + (n.start - t) * SCROLL_PX);
+      const w = snap(n.dur * SCROLL_PX);
       if (x > W + 20 || x + w < -20) continue;
       const y = yOf(n.m, lo, hi);
-      const hh = Math.max(10, tol * 2 * pxPerCent);
-      let col = 'rgba(140,170,255,.55)';
-      if (n.done) col = n.ratio >= 0.6 ? 'rgba(94,227,154,.65)' : 'rgba(255,138,122,.55)';
-      else if (n === active) col = 'rgba(255,211,107,.75)';
-      roundRect(x, y - hh / 2, w, hh, 7); ctx.fillStyle = col; ctx.fill();
-      ctx.fillStyle = 'rgba(20,24,50,.85)'; ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'left'; ctx.fillText(noteName(n.m), x + 6, y);
-      // お手本が鳴っている間は♪
+      const hh = snap(Math.max(P * 5, tol * 2 * pxPerCent));
+      let base = '#c9d6ff', light = '#ffffff', dark = '#7e8bd1';
+      if (n.done) {
+        if (n.ratio >= 0.6) { base = '#9ff0b8'; light = '#e6ffee'; dark = '#3fa86a'; }
+        else { base = '#d6c6d6'; light = '#f2e9f2'; dark = '#8f7a8f'; }
+      } else if (n === active) { base = '#ffe08a'; light = '#fff6d0'; dark = '#d19a2a'; }
+      drawCloud(x, snap(y - hh / 2), w, hh, base, light, dark);
+      ctx.fillStyle = INK; ctx.font = `${P * 4}px ${FONT}`;
+      ctx.fillText(noteName(n.m), x + P * 3, snap(y) + 1);
       const gs = n.start - GUIDE_LEAD;
-      if ($('guide').checked && t >= gs && t < gs + GUIDE_LEN) {
-        ctx.fillStyle = '#ffd36b'; ctx.font = '20px sans-serif'; ctx.fillText('♪', x + 4, y - hh / 2 - 14);
-      }
+      if ($('guide').checked && t >= gs && t < gs + GUIDE_LEN) drawNoteIcon(x + P * 2, snap(y - hh / 2) - P * 9, '#ffcf5a');
     }
   }
 
-  // 軌跡
-  for (let i = 0; i < trail.length; i++) {
-    const p = trail[i];
-    ctx.globalAlpha = i / trail.length * 0.6;
-    ctx.fillStyle = p.ok ? '#5ee39a' : '#9fb3ff';
-    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+  // 軌跡（小さな音符の粒）
+  for (const p of trail) {
+    ctx.globalAlpha = Math.max(0, p.life) * 0.8;
+    ctx.fillStyle = p.ok ? '#9ff0b8' : '#ffffff';
+    ctx.fillRect(snap(p.x), snap(p.y), P, P);
   }
   ctx.globalAlpha = 1;
 
-  // パーティクル
+  // パーティクル（ドットの星）
   for (const p of particles) {
-    p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.life -= 0.025;
-    ctx.globalAlpha = Math.max(0, p.life);
-    ctx.fillStyle = p.c; drawStar(p.x, p.y, 4 * p.life + 1);
+    p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life -= 0.03;
+    if (p.life <= 0) continue;
+    ctx.fillStyle = p.c;
+    const x = snap(p.x), y = snap(p.y);
+    ctx.fillRect(x, y - P, P, P * 3); ctx.fillRect(x - P, y, P * 3, P);
   }
-  ctx.globalAlpha = 1;
   particles = particles.filter(p => p.life > 0);
 
   // キャラ
-  drawChara(charX, charY, expr);
+  const scale = P;
+  const sx = snap(charX - 8 * scale);
+  const bob = (expr === 'sing' || expr === 'happy') && Math.floor(animT * 6) % 2 ? -P : 0;
+  const sy = snap(charY - 9 * scale - jump * P * 5) + bob;
+  const walking = (mode === 'exercise' || curMidi !== null) && Math.floor(animT * 6) % 2 === 1;
+  drawSpriteTo(ctx, sx, sy, scale, expr, walking);
+  // 汗・びっくり・zzz
+  ctx.font = `${P * 5}px ${FONT}`; ctx.textAlign = 'center';
+  if (expr === 'low') { ctx.fillStyle = '#8fd3ff'; ctx.fillRect(sx + 15 * P, sy + 4 * P, P, P * 2); ctx.fillRect(sx + 14 * P, sy + 6 * P, P * 3, P * 2); }
+  if (expr === 'high') { ctx.fillStyle = '#ffcf5a'; ctx.fillRect(sx + 16 * P, sy + 1 * P, P, P * 4); ctx.fillRect(sx + 16 * P, sy + 6 * P, P, P); }
+  if (expr === 'sleep') { ctx.fillStyle = '#fff'; ctx.fillText('z', sx + 18 * P, sy + 2 * P + Math.sin(animT * 2) * P * 2); ctx.fillText('z', sx + 21 * P, sy - P * 2 + Math.sin(animT * 2 + 1) * P * 2); }
 
-  // ポップアップ
-  ctx.textAlign = 'center';
+  // ポップアップ文字
+  ctx.font = `${P * 6}px ${FONT}`;
   for (const p of popups) {
     p.y -= 0.6; p.life -= 0.015;
-    ctx.globalAlpha = Math.max(0, p.life);
-    ctx.font = 'bold 20px sans-serif'; ctx.fillStyle = p.color;
-    ctx.fillText(p.text, p.x, p.y);
+    if (p.life <= 0) continue;
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillStyle = INK; ctx.fillText(p.text, p.x + P, p.y + P);
+    ctx.fillStyle = p.color; ctx.fillText(p.text, p.x, p.y);
   }
   ctx.globalAlpha = 1; ctx.textAlign = 'left';
   popups = popups.filter(p => p.life > 0);
 
-  // コンボ表示
-  if (mode === 'exercise' && combo >= 2) {
-    ctx.font = 'bold 16px sans-serif'; ctx.fillStyle = '#ffd36b'; ctx.textAlign = 'right';
-    ctx.fillText(`${combo} COMBO`, W - 12, 18); ctx.textAlign = 'left';
+  // スコア風の表示
+  if (mode === 'exercise') {
+    ctx.font = `${P * 5}px ${FONT}`; ctx.textAlign = 'right';
+    const done = notes.filter(n => n.done).length;
+    ctx.fillStyle = INK; ctx.fillText(`${done}/${notes.length}  COMBO ${combo}`, W - P * 3 + P, P * 6 + P);
+    ctx.fillStyle = '#fff'; ctx.fillText(`${done}/${notes.length}  COMBO ${combo}`, W - P * 3, P * 6);
+    ctx.textAlign = 'left';
   }
 }
 
-function drawChara(x, y, expr) {
-  if (y === null) return;
-  blinkT += 1 / 60;
-  squash *= 0.88;
-  const r = 24;
-  const sx = 1 + squash * 0.25, sy = 1 - squash * 0.2;
-  const bob = expr === 'sleep' ? Math.sin(blinkT * 2) * 2 : 0;
-  ctx.save();
-  ctx.translate(x, y + bob);
-  ctx.scale(sx, sy);
-
-  const colors = { happy: '#5ee39a', low: '#7fb0ff', high: '#ffb36b', sing: '#a9b8ff', idle: '#a9b8ff', sleep: '#8a93c0' };
-  const body = colors[expr] || '#a9b8ff';
-  // 影っぽい輪郭
-  ctx.fillStyle = 'rgba(0,0,0,.25)';
-  ctx.beginPath(); ctx.ellipse(2, 4, r, r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
-  // 体
-  const gr = ctx.createRadialGradient(-8, -10, 4, 0, 0, r);
-  gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.25, body); gr.addColorStop(1, shade(body));
-  ctx.fillStyle = gr;
-  ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
-  // 頭の音符しっぽ
-  ctx.strokeStyle = shade(body); ctx.lineWidth = 3; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(8, -r * 0.85); ctx.quadraticCurveTo(14, -r * 1.5, 22, -r * 1.25); ctx.stroke();
-
-  // 目
-  ctx.fillStyle = '#1d2140';
-  const blink = (blinkT % 3.2) < 0.12;
-  if (expr === 'sleep' || blink) {
-    ctx.lineWidth = 2; ctx.strokeStyle = '#1d2140';
-    line(-11, -4, -5, -4); line(5, -4, 11, -4);
-  } else if (expr === 'happy') {
-    ctx.lineWidth = 2.5; ctx.strokeStyle = '#1d2140';
-    ctx.beginPath(); ctx.arc(-8, -2, 4, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
-    ctx.beginPath(); ctx.arc(8, -2, 4, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
-  } else {
-    const eyeH = expr === 'high' ? 5.5 : 4.5;
-    ctx.beginPath(); ctx.ellipse(-8, -4, 3.2, eyeH, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(8, -4, 3.2, eyeH, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(-7, -6, 1.2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(9, -6, 1.2, 0, Math.PI * 2); ctx.fill();
+function drawBackground() {
+  // 空（色の帯でグラデーション風に）
+  const bands = ['#2a1f3d', '#3a2a5c', '#56397a', '#7a4a8f', '#a85c94', '#d9788f', '#f29c8a'];
+  const gH = groundH();
+  const skyH = H - gH;
+  const bh = Math.ceil(skyH / bands.length / P) * P;
+  bands.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(0, i * bh, W, bh + P); });
+  // 星
+  for (const s of stars) {
+    if (Math.floor(animT * 2 + s.tw) % 4 === 0) continue;
+    ctx.fillStyle = '#fff6e9';
+    ctx.fillRect(snap(s.x * W), snap(s.y * skyH), P, P);
   }
-  // ほっぺ
-  ctx.fillStyle = 'rgba(255,120,140,.45)';
-  ctx.beginPath(); ctx.ellipse(-14, 5, 4, 2.5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(14, 5, 4, 2.5, 0, 0, Math.PI * 2); ctx.fill();
-  // 口
-  ctx.strokeStyle = '#1d2140'; ctx.fillStyle = '#5a1f2a'; ctx.lineWidth = 2;
-  if (expr === 'happy') {
-    ctx.beginPath(); ctx.arc(0, 5, 6, 0, Math.PI); ctx.fill();
-  } else if (expr === 'high') {
-    ctx.beginPath(); ctx.ellipse(0, 9, 3.5, 4.5, 0, 0, Math.PI * 2); ctx.fill();
-  } else if (expr === 'low') {
-    ctx.beginPath(); ctx.moveTo(-6, 10); ctx.quadraticCurveTo(-3, 7, 0, 10); ctx.quadraticCurveTo(3, 13, 6, 10); ctx.stroke();
-  } else if (expr === 'sing') {
-    ctx.beginPath(); ctx.ellipse(0, 9, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
-  } else if (expr === 'sleep') {
-    line(-3, 9, 3, 9);
-  } else {
-    ctx.beginPath(); ctx.arc(0, 6, 4, 0.2, Math.PI - 0.2); ctx.stroke();
+  // 遠くの山・近くの山（ゆっくり流れる）
+  drawHills(hills2, scrollX * 0.15, '#6b3f7a', gH, P * 3);
+  drawHills(hills1, scrollX * 0.35, '#8f4f7f', gH, P * 2);
+  // 地面
+  const gy = H - gH;
+  ctx.fillStyle = '#7bd389'; ctx.fillRect(0, gy, W, P * 2);
+  ctx.fillStyle = '#4fae6a'; ctx.fillRect(0, gy + P * 2, W, P);
+  ctx.fillStyle = '#b8805a'; ctx.fillRect(0, gy + P * 3, W, gH - P * 3);
+  const off = Math.floor(scrollX / P) % 8;
+  ctx.fillStyle = '#8f5f42';
+  for (let x = -off * P; x < W; x += P * 8) {
+    ctx.fillRect(x, gy + P * 5, P, P); ctx.fillRect(x + P * 4, gy + P * 7, P, P);
   }
-  ctx.restore();
-
-  // 汗（低いとき）/ びっくり（高いとき）/ zzz（寝てる）
-  ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
-  if (expr === 'low') { ctx.fillStyle = '#9fd4ff'; ctx.fillText('💧', x + r + 4, y - r + 2); }
-  if (expr === 'high') { ctx.fillStyle = '#ffd36b'; ctx.fillText('!', x + r + 2, y - r); }
-  if (expr === 'sleep') { ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillText('z z', x + r + 10, y - r - 4 + Math.sin(blinkT * 2) * 3); }
-  ctx.textAlign = 'left';
+  ctx.fillStyle = '#7bd389';
+  for (let x = -off * P; x < W; x += P * 8) ctx.fillRect(x + P * 2, gy - P, P, P);
+}
+function drawHills(arr, offset, color, gH, colW) {
+  ctx.fillStyle = color;
+  const start = Math.floor(offset / colW);
+  const sub = offset % colW;
+  for (let i = 0; i * colW - sub < W + colW; i++) {
+    const h = arr[(start + i) % arr.length] * P;
+    ctx.fillRect(Math.round(i * colW - sub), H - gH - h, colW, h);
+  }
+}
+function drawCloud(x, y, w, h, base, light, dark) {
+  // 角を落としたドットの雲ブロック
+  ctx.fillStyle = dark;
+  ctx.fillRect(x + P, y, w - 2 * P, h); ctx.fillRect(x, y + P, w, h - 2 * P);
+  ctx.fillStyle = base;
+  ctx.fillRect(x + P, y + P, w - 2 * P, h - 2 * P);
+  ctx.fillStyle = light;
+  ctx.fillRect(x + 2 * P, y + P, w - 4 * P, P);
+  // もこもこ
+  for (let cx = x + P * 3; cx < x + w - P * 4; cx += P * 6) {
+    ctx.fillStyle = dark; ctx.fillRect(cx, y - P * 2, P * 4, P * 2);
+    ctx.fillStyle = base; ctx.fillRect(cx + P, y - P, P * 2, P * 2);
+    ctx.fillStyle = light; ctx.fillRect(cx + P, y - P, P, P);
+  }
+}
+function drawNoteIcon(x, y, c) {
+  ctx.fillStyle = c;
+  ctx.fillRect(x + P * 3, y, P, P * 5);
+  ctx.fillRect(x + P * 4, y, P * 2, P); ctx.fillRect(x + P * 5, y + P, P, P);
+  ctx.fillRect(x + P, y + P * 4, P * 3, P * 2);
+}
+function drawSpriteTo(c, x, y, s, face, walking) {
+  for (let r = 0; r < 16; r++) {
+    const row = (r === 15 && walking) ? FEET_B : BODY[r];
+    for (let k = 0; k < 16; k++) {
+      const ch = row[k];
+      if (ch === '.') continue;
+      c.fillStyle = PAL[ch];
+      c.fillRect(x + k * s, y + r * s, s, s);
+    }
+  }
+  c.fillStyle = CHEEK;
+  for (const [cx, cy] of CHEEKS) c.fillRect(x + cx * s, y + cy * s, s, s);
+  for (const [fx, fy, col] of (FACES[face] || FACES.normal)) {
+    c.fillStyle = col || INK;
+    c.fillRect(x + fx * s, y + fy * s, s, s);
+  }
 }
 
 // ===== 結果 =====
@@ -508,9 +582,8 @@ function showResult() {
   $('go').disabled = false;
   const ratios = notes.map(n => n.ratio);
   const score = Math.round(ratios.reduce((a, b) => a + b, 0) / ratios.length * 100);
-
   const voiced = notes.flatMap(n => n.samples.filter(s => s.dev !== null).map(s => Math.max(-300, Math.min(300, s.dev))));
-  const meanDev = voiced.length ? voiced.reduce((a, b) => a + b, 0) / voiced.length : 0;
+  const meanDev = voiced.length ? avg(voiced) : 0;
 
   let scoopCount = 0, unstableCount = 0, judged = 0;
   for (const n of notes) {
@@ -529,37 +602,38 @@ function showResult() {
   if (voiced.length < 10) {
     type = '声がとどかなかったかも'; advice = 'マイクに声が届いていないようです。もう少し大きめの声か、スマホを口に近づけて試してみてください。';
   } else if (score >= 85) {
-    type = 'ぴったり職人'; advice = 'ほぼ完璧です！「きびしい」モードや「高音チャレンジ」に進んでみましょう。';
+    type = 'ぴったり職人'; advice = 'ほぼ完璧！「きびしい」や「高音チャレンジ」に進んでみよう。';
   } else if (scoop) {
-    type = 'しゃくりあげタイプ'; advice = '出だしで下から探りにいく癖があります。声を出す前にお手本の高さを頭の中で鳴らして、「最初から足場の上に着地する」イメージで歌ってみましょう。';
+    type = 'しゃくりあげタイプ'; advice = '出だしで下から探りにいく癖があります。声を出す前にお手本の高さを頭の中で鳴らして、「いきなり雲の上に着地する」イメージで歌ってみよう。';
   } else if (meanDev < -25) {
-    type = 'ちょい低めタイプ'; advice = '全体的に少し低めです。お手本より「ほんの少し上」を狙うくらいの意識で、ちょうど良くなることが多いです。';
+    type = 'ちょい低めタイプ'; advice = '全体的に少し低め。お手本より「ほんの少し上」を狙うくらいで、ちょうど良くなることが多いよ。';
   } else if (meanDev > 25) {
-    type = 'ちょい高めタイプ'; advice = '全体的に少し高めです。力みで上ずっているかも。肩の力を抜いて、楽な声で合わせてみましょう。';
+    type = 'ちょい高めタイプ'; advice = '全体的に少し高め。力んで上ずっているかも。肩の力を抜いて、楽な声で合わせてみよう。';
   } else if (unstable) {
-    type = 'ふらふらタイプ'; advice = '高さは合っているのに、伸ばしている間に揺れています。「ロングトーン」で、まっすぐ伸ばす練習がおすすめです。';
+    type = 'ふらふらタイプ'; advice = '高さは合っているのに、伸ばしている間に揺れています。「ロングトーン」でまっすぐ伸ばす練習がおすすめ。';
   } else {
-    type = 'のびしろタイプ'; advice = '外れ方に大きな癖はありません。お手本をよく聴いてから歌うのを意識すると、すぐスコアが伸びるはずです。';
+    type = 'のびしろタイプ'; advice = '外れ方に大きな癖はなし。お手本をよく聴いてから歌うと、すぐスコアが伸びるはず！';
   }
 
   const bars = notes.map(n => {
-    const h = Math.max(4, n.ratio * 60);
-    const c = n.ratio >= 0.6 ? '#5ee39a' : '#ff8a7a';
-    return `<div style="height:${h}px;background:${c}"><span>${noteName(n.m)}</span></div>`;
+    const h = Math.max(4, Math.round(n.ratio * 56 / 4) * 4);
+    const c = n.ratio >= 0.6 ? '#9ff0b8' : '#d6c6d6';
+    return `<div style="height:${h}px;background:${c};box-shadow:inset 0 -4px 0 rgba(0,0,0,.25)"><span>${noteName(n.m)}</span></div>`;
   }).join('');
 
   $('card').innerHTML = `
-    <div class="small">今回のあなたは…</div>
+    <div class="small">こえのすけ の しんだん けっか</div>
     <div class="type">${type}</div>
-    <div class="score">${score}<span style="font-size:18px">点</span></div>
-    <div class="small">最大コンボ ${bestCombo} ／ 平均のずれ ${meanDev >= 0 ? '+' : ''}${Math.round(meanDev)}</div>
+    <div class="score">${score}<span style="font-size:18px"> てん</span></div>
+    <div class="small">さいだいコンボ ${bestCombo} ／ へいきんのずれ ${meanDev >= 0 ? '+' : ''}${Math.round(meanDev)}</div>
     <div class="advice">${advice}</div>
     <div id="bars">${bars}</div>
     <div class="btns">
-      <button class="primary" id="again">もう一回</button>
-      <button id="free">自由に歌う</button>
+      <button class="primary" id="again">▶ もういちど</button>
+      <button id="free">じゆうに うたう</button>
     </div>`;
   $('overlay').style.display = 'flex';
+  blip(523, 0.1); setTimeout(() => blip(659, 0.1), 110); setTimeout(() => blip(784, 0.18), 220);
   $('again').onclick = () => $('go').onclick();
   $('free').onclick = () => { $('overlay').style.display = 'none'; mode = 'free'; trail = []; };
 }
@@ -567,28 +641,10 @@ function showResult() {
 // ===== 小道具 =====
 function avg(a) { return a.reduce((x, y) => x + y, 0) / a.length; }
 function std(a) { const m = avg(a); return Math.sqrt(avg(a.map(x => (x - m) ** 2))); }
-function line(x1, y1, x2, y2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
-function roundRect(x, y, w, h, r) {
-  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-}
-function drawStar(x, y, r) {
-  ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const a = Math.PI / 5 * i - Math.PI / 2, rr = i % 2 ? r * 0.45 : r;
-    ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-  }
-  ctx.closePath(); ctx.fill();
-}
 function spawnSparkle(x, y) {
-  const cs = ['#ffd36b', '#ffffff', '#5ee39a', '#ffb0f0'];
-  particles.push({ x: x + (Math.random() - .5) * 30, y: y - 10, vx: (Math.random() - .5) * 2.2, vy: -Math.random() * 2 - 0.5,
+  const cs = ['#ffcf5a', '#ffffff', '#9ff0b8', '#ff9eb0'];
+  particles.push({ x: x + (Math.random() - .5) * 30, y: y - 10, vx: (Math.random() - .5) * 2.4, vy: -Math.random() * 2.2 - 0.6,
     life: 1, c: cs[Math.floor(Math.random() * cs.length)] });
-}
-function shade(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  const r = Math.round(((n >> 16) & 255) * 0.65), g = Math.round(((n >> 8) & 255) * 0.65), b = Math.round((n & 255) * 0.65);
-  return `rgb(${r},${g},${b})`;
 }
 
 resize();
