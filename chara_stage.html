@@ -1214,21 +1214,44 @@ function showResult() {
   const scoop = judged && scoopCount / judged >= 0.4;
   const unstable = judged && unstableCount / judged >= 0.5;
 
-  let type, advice;
-  if (voiced.length < 10) {
-    type = '声がとどかなかったかも'; advice = 'マイクに声が届いていないようです。もう少し大きめの声か、スマホを口に近づけて試してみてください。';
-  } else if (score >= 85) {
-    type = 'ぴったり職人'; advice = 'ほぼ完璧！「きびしい」や「高音チャレンジ」に進んでみよう。';
-  } else if (scoop) {
-    type = 'しゃくりあげタイプ'; advice = '出だしで下から探りにいく癖があります。声を出す前にお手本の高さを頭の中で鳴らして、「いきなり雲の上に着地する」イメージで歌ってみよう。';
-  } else if (meanDev < -25) {
-    type = 'ちょい低めタイプ'; advice = '全体的に少し低め。お手本より「ほんの少し上」を狙うくらいで、ちょうど良くなることが多いよ。';
-  } else if (meanDev > 25) {
-    type = 'ちょい高めタイプ'; advice = '全体的に少し高め。力んで上ずっているかも。肩の力を抜いて、楽な声で合わせてみよう。';
-  } else if (unstable) {
-    type = 'ふらふらタイプ'; advice = '高さは合っているのに、伸ばしている間に揺れています。「ロングトーン」でまっすぐ伸ばす練習がおすすめ。';
+  // 歌う時間のうち、声を拾えた割合（これが低いと歌の診断はできない）
+  const totalSamples = notes.reduce((a, n) => a + n.samples.length, 0);
+  const coverage = totalSamples ? voiced.length / totalSamples : 0;
+  const accVoiced = voiced.length ? voiced.filter(d => Math.abs(d) <= tol).length / voiced.length : 0;
+  // 音ごとの平均のずれ（音によって上下にバラつくか）
+  const noteMeans = notes.map(n => {
+    const v = n.samples.filter(s => s.dev !== null && s.t >= 0.3 * n.dur).map(s => Math.max(-300, Math.min(300, s.dev)));
+    return v.length >= 5 ? avg(v) : null;
+  }).filter(x => x !== null);
+  const spread = noteMeans.length >= 3 ? std(noteMeans) : 0;
+
+  let type, advice, caution = '';
+  const clearNotes = notes.filter(n => n.samples.length && n.samples.filter(x => x.dev !== null).length / n.samples.length >= 0.5).length;
+  if (coverage < 0.3 && clearNotes >= 1) {
+    type = '歌っていない音が多いです';
+    advice = `${clearNotes}音はしっかり声が届いていたので、マイクは大丈夫そうです。お手本の「♪」が鳴ったら、雲がキャラのところに来たタイミングで「あー」と声を出し、雲が通り過ぎるまで伸ばし続けてみよう。`;
+  } else if (coverage < 0.3) {
+    type = '声がほとんど届いていません';
+    advice = '歌がどうこうではなく、マイクが声を拾えていない可能性が高いです。<br>・スマホを口から20〜30cmくらいに近づける<br>・設定の「感度」を「高」にする<br>・右上のMICメーターが緑になる声の大きさで「あー」と伸ばす<br>・まわりの音（テレビ・伴奏のスピーカー）を小さくする';
   } else {
-    type = 'のびしろタイプ'; advice = '外れ方に大きな癖はなし。お手本をよく聴いてから歌うと、すぐスコアが伸びるはず！';
+    if (coverage < 0.6) caution = '<div class="small" style="margin-top:6px">※ 声が途切れがちだったので、診断は参考程度です</div>';
+    if (score >= 85) {
+      type = 'ぴったり職人'; advice = 'ほぼ完璧！「きびしい」や「高音チャレンジ」に進んでみよう。';
+    } else if (scoop) {
+      type = 'しゃくりあげタイプ'; advice = '出だしで下から探りにいく癖があります。声を出す前にお手本の高さを頭の中で鳴らして、「いきなり雲の上に着地する」イメージで歌ってみよう。';
+    } else if (meanDev < -25 && spread < 60) {
+      type = 'ちょい低めタイプ'; advice = '全体的に少し低め。お手本より「ほんの少し上」を狙うくらいで、ちょうど良くなることが多いよ。';
+    } else if (meanDev > 25 && spread < 60) {
+      type = 'ちょい高めタイプ'; advice = '全体的に少し高め。力んで上ずっているかも。肩の力を抜いて、楽な声で合わせてみよう。';
+    } else if (spread >= 60 || accVoiced < 0.4) {
+      type = '音の高さがバラバラタイプ'; advice = '音によって、上にずれたり下にずれたりしています。お手本を1音ずつよく聴いて、頭の中で同じ高さを鳴らしてから声を出してみよう。まずは「やさしい」から。';
+    } else if (unstable) {
+      type = 'ふらふらタイプ'; advice = '高さは合っているのに、伸ばしている間に揺れています。「ロングトーン」でまっすぐ伸ばす練習がおすすめ。';
+    } else if (score >= 60) {
+      type = 'のびしろタイプ'; advice = '外れ方に大きな癖はなし。お手本をよく聴いてから歌うと、すぐスコアが伸びるはず！';
+    } else {
+      type = 'あと一歩タイプ'; advice = '合っている瞬間はあるけれど、雲に乗っていられる時間が短めです。声を出したら、キャラが雲に乗るまで高さを少しずつ調整してみよう。';
+    }
   }
 
   const bars = notes.map(n => {
@@ -1241,8 +1264,8 @@ function showResult() {
     <div class="small">こえのすけ の しんだん けっか</div>
     <div class="type">${type}</div>
     <div class="score">${score}<span style="font-size:18px"> てん</span></div>
-    <div class="small">さいだいコンボ ${bestCombo} ／ へいきんのずれ ${meanDev >= 0 ? '+' : ''}${Math.round(meanDev)}</div>
-    <div class="advice">${advice}</div>
+    <div class="small">声を拾えた割合 ${Math.round(coverage * 100)}% ／ さいだいコンボ ${bestCombo} ／ へいきんのずれ ${meanDev >= 0 ? '+' : ''}${Math.round(meanDev)}</div>
+    <div class="advice">${advice}</div>${caution}
     <div id="bars">${bars}</div>
     <div class="btns">
       <button class="primary" id="again">▶ もういちど</button>
