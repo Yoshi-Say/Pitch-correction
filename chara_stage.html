@@ -118,7 +118,7 @@ const EXERCISES = {
 const BPM = 100, BEAT = 60 / BPM;              // テンポ（音の長さは拍で決める）
 const GUIDE_LEAD = 2 * BEAT, GUIDE_LEN = 0.9 * BEAT, GAP = 2 * BEAT;
 const GATE_MIN = { high: 0.002, mid: 0.004, low: 0.01 };   // 感度ごとの最低ライン
-let noiseFloor = 0.003, gateNow = 0.012;              // 周りの雑音の大きさを常に学習して、しきい値を自動で上げ下げ
+let gateNow = 0.004;              // 周りの雑音の大きさを常に学習して、しきい値を自動で上げ下げ
 const SCROLL_PX = 150;       // 練習中のスクロール速度(CSS px/秒)
 const FREE_SCROLL = 45;      // 自由モードのスクロール速度
 const FONT = '"DotGothic16", ui-monospace, monospace';
@@ -282,6 +282,9 @@ function makeSprite32(face, walking) {
       eyes(1);
       px(9, 11, OUT); px(10, 11, OUT); px(11, 10, OUT); px(20, 10, OUT); px(21, 11, OUT); px(22, 11, OUT);
       px(13, 20, OUT); px(14, 19, OUT); px(15, 20, OUT); px(16, 19, OUT); px(17, 20, OUT); px(18, 19, OUT); break;
+    case 'dead':
+      for (const ex of [9, 20]) { px(ex, 12, OUT); px(ex + 2, 12, OUT); px(ex + 1, 13, OUT); px(ex, 14, OUT); px(ex + 2, 14, OUT); }
+      rect(14, 19, 4, 1, OUT); break;
     case 'sing':
       eyes();
       rect(15, 18, 2, 1, OUT); rect(14, 19, 4, 1, MOUTH); rect(15, 20, 2, 1, TONGUE);
@@ -293,6 +296,23 @@ function makeSprite32(face, walking) {
   return cv2;
 }
 
+// 声が聞こえていないとき用の、色の抜けた（灰色の）こえのすけ
+const GRAY_CACHE = {};
+function makeSpriteGray(face, walking) {
+  const key = face + (walking ? 'w' : '');
+  if (GRAY_CACHE[key]) return GRAY_CACHE[key];
+  const src = makeSprite32(face, walking);
+  const c = document.createElement('canvas'); c.width = c.height = 32;
+  const x = c.getContext('2d'); x.drawImage(src, 0, 0);
+  const img = x.getImageData(0, 0, 32, 32), d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const l = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+    d[i] = l * 0.62 + 18; d[i + 1] = l * 0.62 + 14; d[i + 2] = l * 0.7 + 30;     // くすんだ青灰色
+  }
+  x.putImageData(img, 0, 0);
+  GRAY_CACHE[key] = c;
+  return c;
+}
 // タイトル画面のキャラ
 $('coverChara').getContext('2d').drawImage(makeSprite32('happy', false), 0, 0);
 
@@ -328,10 +348,181 @@ function resize() {
 window.addEventListener('resize', resize);
 
 // ===== マイク開始 =====
+// ===== 音程検出エンジン v2（AudioWorkletで10msごとに判定） =====
+const DETECTOR_SRC = `// ===== こえのすけ 音程検出エンジン v2 =====
+// ・16kHz相当にダウンサンプリングしてYIN（軽い）
+// ・最新の音を使う「後ろ向き」窓（遅れが少ない）
+// ・候補を複数出して、直前の音程とのつながりで選ぶ（オクターブ誤判定対策）
+// ・最後に元のサンプリング周波数で細かく仕上げる（精度）
+// AudioWorkletでもメインスレッドでもNodeでも動くよう、外部に依存しない1クラスにしている
+class KoePitchDetector {
+  constructor(sr, opt = {}) {
+    this.sr = sr;
+    this.D = Math.max(1, Math.round(sr / 16000));      // 48k→3、44.1k→3
+    this.fs = sr / this.D;
+    this.hop = Math.round(sr * (opt.hopMs || 10) / 1000);
+    this.W = Math.round(this.fs * 0.024);               // 分析窓 24ms
+    this.tMin = Math.floor(this.fs / 1050);
+    this.tMax = Math.ceil(this.fs / 70);
+    this.L = this.W + this.tMax + 2;                    // 必要なダウンサンプル後の長さ
+    // 折り返しノイズを防ぐローパス（窓付きsinc、31タップ、6kHz）
+    const taps = 31, fc = Math.min(6000, this.fs * 0.42) / sr;
+    this.h = new Float32Array(taps);
+    let hs = 0;
+    for (let i = 0; i < taps; i++) {
+      const m = i - (taps - 1) / 2;
+      const sinc = m === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * m) / (Math.PI * m);
+      const w = 0.54 - 0.46 * Math.cos(2 * Math.PI * i / (taps - 1));
+      this.h[i] = sinc * w; hs += this.h[i];
+    }
+    for (let i = 0; i < taps; i++) this.h[i] /= hs;
+    this.R = 8192;                                      // 生の音のリングバッファ
+    this.ring = new Float32Array(this.R);
+    this.wpos = 0; this.count = 0; this.since = 0;
+    this.y = new Float32Array(this.L);
+    this.d = new Float32Array(this.tMax + 2);
+    this.prevMidi = null; this.prevFrame = -99; this.frame = 0;
+    this.noiseFloor = 0.003;
+    this.gateMin = opt.gateMin || 0.004;
+    this.dMax = opt.dMax || 0.35;                       // これより周期性が低い音は「声ではない」
+  }
+  setGate(g) { this.gateMin = g; }
+  // 128サンプルずつ流し込む。10msごとに結果を返す
+  push(block, onResult) {
+    for (let i = 0; i < block.length; i++) {
+      this.ring[this.wpos] = block[i];
+      this.wpos = (this.wpos + 1) & (this.R - 1);
+      this.count++; this.since++;
+      if (this.since >= this.hop) { this.since = 0; onResult(this.analyze()); }
+    }
+  }
+  // 予備用：直近の音（Float32Array）をまるごと入れて1回分析する
+  analyzeLatest(arr) {
+    for (let i = 0; i < arr.length; i++) { this.ring[this.wpos] = arr[i]; this.wpos = (this.wpos + 1) & (this.R - 1); }
+    this.count += arr.length;
+    return this.analyze();
+  }
+  raw(k) { return this.ring[(this.wpos - 1 - k + this.R * 4) & (this.R - 1)]; }   // k=0が最新
+  analyze() {
+    this.frame = (this.frame || 0) + 1;
+    const { D, W, L, h, y, d, tMin, tMax } = this;
+    const taps = h.length;
+    if (this.count < L * D + taps) return { f0: 0, conf: 0, rms: 0 };
+    // ダウンサンプリング（y[0]が最新）
+    let mean = 0;
+    for (let k = 0; k < L; k++) {
+      let s = 0; const base = k * D;
+      for (let m = 0; m < taps; m++) s += h[m] * this.raw(base + m);
+      y[k] = s; mean += s;
+    }
+    mean /= L;
+    let e = 0;
+    for (let k = 0; k < L; k++) { y[k] -= mean; if (k < W) e += y[k] * y[k]; }
+    const rms = Math.sqrt(e / W);
+    // 雑音レベルの学習（下げるのは速く、上げるのはゆっくり）
+    if (rms < this.noiseFloor) this.noiseFloor = this.noiseFloor * 0.9 + rms * 0.1;
+    else this.noiseFloor = Math.min(0.01, this.noiseFloor * 0.9995 + rms * 0.0005);
+    const gate = Math.max(this.gateMin, this.noiseFloor * 2.5);
+    if (rms < gate) return { f0: 0, conf: 0, rms, gate };
+    // YIN（累積平均正規化差分関数）
+    d[0] = 1; let run = 0;
+    for (let tau = 1; tau <= tMax; tau++) {
+      let s = 0;
+      for (let j = 0; j < W; j++) { const df = y[j] - y[j + tau]; s += df * df; }
+      run += s; d[tau] = run > 0 ? s * tau / run : 1;
+    }
+    // 候補（谷）を集める
+    const cands = [];
+    for (let t = tMin; t < tMax; t++) {
+      if (d[t] < d[t - 1] && d[t] <= d[t + 1] && d[t] < 0.6) {
+        const a = d[t - 1], b = d[t], c = d[t + 1], den = a + c - 2 * b;
+        const tp = den > 0 ? t + 0.5 * (a - c) / den : t;
+        cands.push({ tau: tp, d: b, midi: 69 + 12 * Math.log2(this.fs / tp / 440) });
+      }
+    }
+    if (!cands.length) return { f0: 0, conf: 0, rms, gate };
+    // YINの基本ルール：しきい値を下回る最初の谷。なければ最小の谷
+    // なければ、最小の谷に近い（+0.1以内）谷のうち一番周期が短いもの（＝1オクターブ下への誤りを防ぐ）
+    const gmin = cands.reduce((a, b) => (b.d < a.d ? b : a));
+    let best = cands.find(c => c.d < 0.15) || cands.find(c => c.d < gmin.d + 0.1);
+    // 直前の音程とのつながりを優先（オクターブ跳びを防ぐ）
+    if (this.prevMidi !== null && this.frame - this.prevFrame <= 15) {
+      let bestCost = Infinity, pick = best;
+      for (const c of cands) {
+        if (c.d > best.d + 0.2) continue;
+        const jump = Math.abs(c.midi - this.prevMidi);
+        const cost = c.d + 0.3 * Math.min(1, jump / 12);
+        if (cost < bestCost) { bestCost = cost; pick = c; }
+      }
+      best = pick;
+    }
+    if (best.d > this.dMax) return { f0: 0, conf: 1 - best.d, rms, gate };
+    // 元のサンプリング周波数で細かく仕上げる
+    const t0 = best.tau * D, Wr = W * D;
+    let bestT = Math.round(t0), bestV = Infinity;
+    const vals = {};
+    for (let t = Math.floor(t0 - D - 1); t <= Math.ceil(t0 + D + 1); t++) {
+      if (t < 2) continue;
+      let s = 0;
+      for (let j = 0; j < Wr; j += 1) { const df = this.raw(j) - this.raw(j + t); s += df * df; }
+      vals[t] = s;
+      if (s < bestV) { bestV = s; bestT = t; }
+    }
+    let tr = bestT;
+    if (vals[bestT - 1] !== undefined && vals[bestT + 1] !== undefined) {
+      const a = vals[bestT - 1], b = vals[bestT], c = vals[bestT + 1], den = a + c - 2 * b;
+      if (den > 0) tr = bestT + 0.5 * (a - c) / den;
+    }
+    const f0 = this.sr / tr;
+    const midi = 69 + 12 * Math.log2(f0 / 440);
+    this.prevMidi = midi; this.prevFrame = this.frame;
+    return { f0, midi, conf: 1 - best.d, rms, gate };
+  }
+}
+if (typeof module !== 'undefined') module.exports = KoePitchDetector;
+`;
+const WORKLET_SRC = DETECTOR_SRC + `
+class KoeProc extends AudioWorkletProcessor {
+  constructor() { super(); this.det = new KoePitchDetector(sampleRate);
+    this.port.onmessage = e => { if (e.data && e.data.gate) this.det.setGate(e.data.gate); }; }
+  process(inputs) { const ch = inputs[0] && inputs[0][0]; if (ch) this.det.push(ch, r => this.port.postMessage(r)); return true; }
+}
+registerProcessor('koe-pitch', KoeProc);`;
+let pitchNode = null, mainDet = null, engine = '';
+let pHist = [], octCount = 0;
+const median = a => { const b = [...a].sort((x, y) => x - y); return b[Math.floor(b.length / 2)]; };
+function guidePlayingAt(nowAbs) {
+  const tt = nowAbs - t0;
+  return mode === 'exercise' && $('guide').checked && notes.some(n => tt >= n.start - GUIDE_LEAD - 0.05 && tt < n.start - GUIDE_LEAD + GUIDE_LEN + 0.12);
+}
+// 10msごとの判定結果を受け取り、表示用の音程にまとめる
+function onPitch(r) {
+  const nowAbs = performance.now() / 1000;
+  curRms = r.rms || 0; if (r.gate) gateNow = r.gate;
+  let m = r.f0 && !guidePlayingAt(nowAbs) ? r.midi : null;
+  if (m !== null && curMidi !== null) {
+    // 本当にオクターブ跳んだのか、一瞬の誤判定かを見分ける（150ms続いたら本物とみなす）
+    const dlt = m - curMidi;
+    if (Math.abs(Math.abs(dlt) - 12) < 0.7) { octCount++; if (octCount < 15) m -= 12 * Math.sign(dlt); }
+    else octCount = 0;
+  }
+  pHist.push(m); if (pHist.length > 5) pHist.shift();
+  const last3 = pHist.slice(-3);
+  if (m !== null) {
+    const v = last3.filter(x => x !== null);
+    if (curMidi === null) {
+      // 出だし：30ms（3回）続けて同じ高さなら確定
+      if (v.length === 3 && Math.max(...v) - Math.min(...v) < 0.8) { curMidi = median(v); lastVoicedAt = nowAbs; }
+    } else { curMidi = median(v); lastVoicedAt = nowAbs; }
+  } else if (nowAbs - lastVoicedAt > 0.08) { curMidi = null; octCount = 0; }
+}
+function sendGate() { const g = GATE_MIN[$('sens').value] || 0.004; if (pitchNode) pitchNode.port.postMessage({ gate: g }); if (mainDet) mainDet.setGate(g); }
+$('sens').addEventListener('change', sendGate);
+
 $('micBtn').onclick = async () => {
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
-    ac = new AC();
+    ac = new AC({ latencyHint: 'interactive' });
     await ac.resume();
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
@@ -341,7 +532,20 @@ $('micBtn').onclick = async () => {
     analyser.fftSize = 2048;
     src.connect(analyser);
     buf = new Float32Array(analyser.fftSize);
-    yinBuf = new Float32Array(analyser.fftSize / 2);
+    try {
+      const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'application/javascript' }));
+      await ac.audioWorklet.addModule(url);
+      pitchNode = new AudioWorkletNode(ac, 'koe-pitch', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      const mute = ac.createGain(); mute.gain.value = 0;
+      src.connect(pitchNode); pitchNode.connect(mute).connect(ac.destination);
+      pitchNode.port.onmessage = e => onPitch(e.data);
+      engine = 'worklet';
+    } catch (err) {
+      // AudioWorkletが使えない端末：同じエンジンを画面側で動かす
+      const K = new Function(DETECTOR_SRC + '; return KoePitchDetector;')();
+      mainDet = new K(ac.sampleRate); engine = 'main';
+    }
+    sendGate();
     $('startCover').style.display = 'none';
     $('go').disabled = false;
     mode = 'free';
@@ -352,58 +556,6 @@ $('micBtn').onclick = async () => {
     alert('マイクを使えませんでした。ブラウザの設定でマイクを許可してください。\n' + e.message);
   }
 };
-
-// ===== 音程検出（YIN法） =====
-function detectPitch() {
-  analyser.getFloatTimeDomainData(buf);
-  const N = buf.length, sr = ac.sampleRate;
-  let rms = 0;
-  for (let i = 0; i < N; i++) rms += buf[i] * buf[i];
-  rms = Math.sqrt(rms / N);
-  curRms = rms;
-  // 雑音レベルの学習（声が出ていないときの音量を、ゆっくり追いかける）
-  // 静かになったらすぐ下げ、上げるのは数十秒かけてゆっくり（歌い続けても声を雑音と勘違いしない）
-  if (rms < noiseFloor) noiseFloor = noiseFloor * 0.9 + rms * 0.1;
-  else noiseFloor = Math.min(0.01, noiseFloor * 0.9995 + rms * 0.0005);
-  gateNow = Math.max(GATE_MIN[$('sens').value] || 0.004, noiseFloor * 2.5);
-  if (rms < gateNow) return null;
-  const Wn = N / 2;
-  const tMax = Math.min(Wn - 2, Math.floor(sr / 75));    // 人の声の範囲（約75〜1000Hz）だけを見る
-  const tMin = Math.floor(sr / 1000);
-  const d = yinBuf;
-  d[0] = 1;
-  let running = 0;
-  for (let tau = 1; tau <= tMax; tau++) {
-    let sum = 0;
-    for (let i = 0; i < Wn; i++) { const df = buf[i] - buf[i + tau]; sum += df * df; }
-    running += sum;
-    d[tau] = running ? sum * tau / running : 1;
-  }
-  let tau = -1;
-  for (let t = tMin; t <= tMax; t++) {
-    if (d[t] < 0.3) { while (t + 1 <= tMax && d[t + 1] < d[t]) t++; tau = t; break; }
-  }
-  if (tau < 0) return null;                                // 息まじりの声も拾えるよう基準はゆるめ（雑音は下の「続いているか」で除外）
-  const x0 = d[tau - 1], x1 = d[tau], x2 = tau + 1 <= tMax ? d[tau + 1] : x1;
-  const den = x0 + x2 - 2 * x1;
-  const better = den ? tau + (x0 - x2) / (2 * den) : tau;
-  return 69 + 12 * Math.log2(sr / better / 440);
-}
-function smoothMidi(m) {
-  hist.push(m);
-  if (hist.length > 7) hist.shift();
-  const v = hist.filter(x => x !== null);
-  if (v.length < 4) return null;                            // 一瞬の音ではなく、続いている声だけ
-  const s = [...v].sort((a, b) => a - b);
-  let med = s[Math.floor(s.length / 2)];
-  const steady = v.filter(x => Math.abs(x - med) < 1 || Math.abs(Math.abs(x - med) - 12) < 1).length;
-  if (steady < 3) return null;                              // 高さがバラバラな音（物音・息）は無視
-  if (curMidi !== null) {
-    const diff = med - curMidi;
-    if (Math.abs(Math.abs(diff) - 12) < 0.6) med -= 12 * Math.sign(diff);
-  }
-  return med;
-}
 
 // ===== 練習の組み立て =====
 function buildExercise() {
@@ -553,13 +705,12 @@ function loop() {
   const nowAbs = performance.now() / 1000;
   const dt = Math.min(0.05, nowAbs - lastFrame); lastFrame = nowAbs;
   animT += dt;
-  // お手本の音が鳴っている間は、マイクが拾ったお手本を声と間違えないよう判定を止める
-  const tt = nowAbs - t0;
-  const guidePlaying = mode === 'exercise' && $('guide').checked && notes.some(n => tt >= n.start - GUIDE_LEAD - 0.05 && tt < n.start - GUIDE_LEAD + GUIDE_LEN + 0.12);
-  const raw = detectPitch();
-  const m = smoothMidi(guidePlaying ? null : raw);
-  if (m !== null) { curMidi = m; lastVoicedAt = nowAbs; }
-  else if (nowAbs - lastVoicedAt > 0.25) curMidi = null;
+  if (mainDet) {
+    // AudioWorkletが使えない端末：直近の音をまるごと分析（画面更新ごと）
+    analyser.getFloatTimeDomainData(buf);
+    onPitch(mainDet.analyzeLatest(buf));
+  }
+  if (curMidi !== null && nowAbs - lastVoicedAt > 0.15) curMidi = null;   // 念のため
 
   const [lo, hi] = viewRange();
   const charX = snap(W * 0.28);
@@ -599,12 +750,13 @@ function loop() {
     if (t > endTime) showResult();
   }
   if (expr === 'normal' && curMidi !== null) expr = 'sing';
+  if (mode === 'exercise' && active && curMidi === null) expr = 'dead';
   if (curMidi === null && mode !== 'exercise') expr = 'sleep';
   if (expr === 'normal' && (animT % 3.2) < 0.15) expr = 'blink';
 
   // --- キャラ位置 ---
   let targetY = curMidi !== null ? yOf(foldInto(curMidi, lo, hi), lo, hi) : (charY ?? yOf((lo + hi) / 2, lo, hi));
-  charY = charY === null ? targetY : charY + (targetY - charY) * 0.3;
+  charY = charY === null ? targetY : charY + (targetY - charY) * 0.6;
   jump *= 0.85;
   if (curMidi !== null) trail.push({ x: charX - 8 * P, y: charY, ok: expr === 'happy', life: 1 });
   for (const p of trail) { p.x -= speed * dt; p.life -= dt * 0.8; }
@@ -614,10 +766,10 @@ function loop() {
 
   // --- ヒント ---
   let hint = '';
-  if (mode === 'free') hint = curMidi !== null ? `いまの声：${noteName(curMidi)}` : 'ピンクの線が きじゅんの「ド」。声を出すと進むよ';
+  if (mode === 'free') hint = curMidi !== null ? `いまの声：${noteName(curMidi)}` : '🎤 しーん…（声を出すと色がつくよ）';
   else if (mode === 'exercise') {
     if (t < notes[0].start - GUIDE_LEAD) hint = 'READY…';
-    else if (active && dev === null) hint = curRms < gateNow ? '声を出して！' : '…';
+    else if (active && dev === null) hint = curRms < gateNow ? '🎤 声がきこえないよ！もっと大きく' : '🎤 声として聞き取れないよ（「あー」とまっすぐ）';
     else if (active && Math.abs(dev) <= tol) hint = 'ぴったり！';
     else if (active) hint = dev < 0 ? 'ちょっと低い ▲' : 'ちょっと高い ▼';
     else hint = $('guide').checked ? 'お手本を聴いて、雲に合わせてね' : '次の雲に合わせてね';
@@ -662,7 +814,10 @@ function draw(lo, hi, charX, t, active, expr) {
       if (n.done) {
         if (n.ratio >= 0.6) { base = '#9ff0b8'; light = '#e6ffee'; dark = '#3fa86a'; }
         else { base = '#d6c6d6'; light = '#f2e9f2'; dark = '#8f7a8f'; }
-      } else if (n === active) { base = '#ffe08a'; light = '#fff6d0'; dark = '#d19a2a'; }
+      } else if (n === active) {
+        if (curMidi === null && Math.floor(animT * 6) % 2) { base = '#ff9a9a'; light = '#ffe0e0'; dark = '#c94a5a'; }
+        else { base = '#ffe08a'; light = '#fff6d0'; dark = '#d19a2a'; }
+      }
       ctx.shadowColor = base; ctx.shadowBlur = n === active ? 22 : (n.done ? 10 : 6);
       drawCloud(x, snap(y - hh / 2), w, hh, base, light, dark);
       ctx.shadowBlur = 0;
@@ -710,7 +865,8 @@ function draw(lo, hi, charX, t, active, expr) {
   const ar = 16 * scale * (expr === 'happy' ? 1.25 + 0.08 * Math.sin(animT * 10) : 1.0);
   const ag = ctx.createRadialGradient(sx + 8 * scale, sy + 9 * scale, 2, sx + 8 * scale, sy + 9 * scale, ar);
   ag.addColorStop(0, auraCol + '.45)'); ag.addColorStop(1, auraCol + '0)');
-  ctx.fillStyle = ag; ctx.fillRect(sx + 8 * scale - ar, sy + 9 * scale - ar, ar * 2, ar * 2);
+  const hearing = curMidi !== null;
+  if (hearing) { ctx.fillStyle = ag; ctx.fillRect(sx + 8 * scale - ar, sy + 9 * scale - ar, ar * 2, ar * 2); }
   // 床に落ちる影（高く飛ぶほど小さく薄く）
   const floorY = H - groundH() + P * 2;
   const hgt = Math.max(0, floorY - (sy + 16 * scale));
@@ -718,7 +874,19 @@ function draw(lo, hi, charX, t, active, expr) {
   ctx.fillStyle = `rgba(20,0,30,${0.45 * ssc})`;
   ctx.beginPath(); ctx.ellipse(sx + 8 * scale + 6, floorY, 9 * scale * ssc, 2.2 * scale * ssc, 0, 0, Math.PI * 2); ctx.fill();
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(makeSprite32(expr, walking), sx, sy, 16 * scale, 16 * scale);
+  const shake = expr === 'dead' ? Math.round(Math.sin(animT * 45) * P * 0.6) : 0;
+  ctx.drawImage(hearing ? makeSprite32(expr, walking) : makeSpriteGray(expr, false), sx + shake, sy, 16 * scale, 16 * scale);
+  if (!hearing && (mode === 'free' || expr === 'dead')) {
+    // 頭の上に「マイク×」の吹き出し
+    const bx = sx + 8 * scale, by = sy - 3 * P;
+    const urgent = expr === 'dead';
+    ctx.fillStyle = urgent ? '#ff5a6a' : 'rgba(40,30,60,.85)';
+    const bw = 30 * P; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx - bw / 2, by - 5 * P, bw, 7 * P, 2 * P) : ctx.rect(bx - bw / 2, by - 5 * P, bw, 7 * P); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(bx - P, by + 2 * P); ctx.lineTo(bx + P, by + 2 * P); ctx.lineTo(bx, by + 3.5 * P); ctx.fill();
+    ctx.font = `${P * 4}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+    ctx.fillText(urgent ? '🎤 きこえない！' : '🎤 しーん…', bx, by - 1.5 * P); ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+  }
   // 汗・びっくり・zzz
   ctx.font = `${P * 5}px ${FONT}`; ctx.textAlign = 'center';
   if (expr === 'low') { ctx.fillStyle = '#8fd3ff'; ctx.fillRect(sx + 15 * P, sy + 4 * P, P, P * 2); ctx.fillRect(sx + 14 * P, sy + 6 * P, P * 3, P * 2); }
@@ -821,7 +989,7 @@ function drawBackground() {
       for (let b = b0; b < b1 && b < freqBuf.length; b++) v = Math.max(v, freqBuf[b] / 255);
       v = Math.max(0, (v - 0.35) / 0.65);
     }
-    const idle = 0.08 + 0.06 * Math.sin(animT * 2 + k * 0.7) + kick * 0.35 * Math.max(0, 1 - k / (nb * 0.4));
+    const idle = 0.03 + 0.02 * Math.sin(animT * 2 + k * 0.7) + kick * 0.18 * Math.max(0, 1 - k / (nb * 0.4));
     v = Math.max(v, idle);
     bars[k] = Math.max(v, bars[k] - 0.04);
   }
